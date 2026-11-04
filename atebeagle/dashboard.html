@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="pt-BR" data-state="UNKNOWN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Painel do validador de atestação remota contínua do ATEBEAGLE.">
+<title>ATEBEAGLE Validador</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='7' width='26' height='18' rx='4' fill='%23211b18'/%3E%3Crect x='8' y='11' width='10' height='10' fill='%23c9622f'/%3E%3Ccircle cx='24' cy='12' r='2' fill='%23d9a531'/%3E%3C/svg%3E">
+<style>
+  /* Paleta terrosa: grafite quente, terracota, mostarda, caramelo. O painel é sempre
+     escuro: é projetado em sala e os LEDs da placa precisam aparecer. */
+  :root {
+    color-scheme: dark;
+    --bg: #1d1815; --bg-2: #27201c; --line: #3d332c; --ink: #f1e8dc; --muted: #ab9c8c;
+    --terra: #d9683d; --mostarda: #dca92f; --caramelo: #b98549; --oliva: #93b06a; --areia: #a8957f;
+    --state: var(--areia);
+    --mono: "JetBrains Mono", "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+    --sans: "Space Grotesk", Bahnschrift, "DIN Alternate", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  }
+  [data-state="TRUSTED"] { --state: var(--oliva); }
+  [data-state="SUSPECT"] { --state: var(--mostarda); }
+  [data-state="REVOKED"] { --state: var(--terra); }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { margin: 0; min-height: 100dvh; color: var(--ink); font: 15px/1.45 var(--sans); background: var(--bg); }
+  .wrap { max-width: 1560px; margin: 0 auto; padding: 0 28px; }
+
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; padding: 14px 0 6px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: .02em; }
+  h1 b { color: var(--terra); font-weight: 700; }
+  .sub { color: var(--muted); font-size: 14px; }
+  #conn { margin-left: auto; color: var(--muted); font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+  #conn.down { color: var(--terra); font-weight: 600; }
+
+  /* Bancada: grade de pontos discreta e um brilho na cor do estado atrás da cena. */
+  .stage { position: relative; border-radius: 14px; overflow: hidden; background: var(--bg-2);
+           background-image: radial-gradient(#ffffff0b 1px, transparent 1.4px); background-size: 18px 18px; }
+  .stage::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .17; transition: background-color .5s;
+                   background-color: var(--state);
+                   -webkit-mask-image: radial-gradient(70% 90% at 72% 45%, #000, transparent);
+                   mask-image: radial-gradient(70% 90% at 72% 45%, #000, transparent); }
+  #scene { position: relative; display: block; width: 100%; height: auto; max-height: 60dvh; padding: 10px 6px 2px; }
+  .caption { position: relative; margin: 0; padding: 0 16px 9px; color: var(--muted); font-size: 12px; }
+
+  /* Tela do notebook */
+  .screen { height: 100%; padding: 16px 22px; display: flex; flex-direction: column; color: var(--ink); font-family: var(--sans);
+            background: radial-gradient(120% 90% at 30% 0, #2c241f, #15110f); }
+  .scr-top { display: flex; justify-content: space-between; color: var(--muted); font-size: 16px; }
+  .scr-state { margin: 2px 0 0; font-size: 70px; line-height: 1.1; font-weight: 700; letter-spacing: -.01em; color: var(--state); transition: color .4s; }
+  .scr-why { min-height: 47px; margin: 0 0 8px; font-size: 18px; line-height: 1.28; color: var(--ink);
+             display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .scr-why.quiet { color: var(--muted); }
+  .screen dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 16px; font-size: 17px; }
+  .screen dt { color: var(--muted); }
+  .screen dd { margin: 0; font-family: var(--mono); font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dms { margin-top: auto; padding-top: 8px; }
+  .dms-label { display: flex; justify-content: space-between; color: var(--muted); font-size: 14px; }
+  .dms-label span:last-child { font-family: var(--mono); font-size: 13px; }
+  .dms-track { height: 8px; margin-top: 3px; border-radius: 4px; background: #ffffff17; overflow: hidden; }
+  .dms-fill { height: 100%; transform-origin: left; transform: scaleX(0); background: var(--caramelo); transition: transform .9s linear, background-color .3s; }
+  .dms-fill.high { background: var(--terra); }
+
+  /* Componentes da placa destacados pelos achados */
+  .halo { fill: none; stroke-width: 5; opacity: 0; transition: opacity .3s; }
+  .hot-bad .halo { opacity: 1; stroke: var(--terra); animation: pulse 1.4s ease-in-out infinite; }
+  .hot-warn .halo { opacity: 1; stroke: var(--mostarda); animation: pulse 1.8s ease-in-out infinite; }
+  .flag { opacity: 0; transition: opacity .3s; }
+  .hot-bad .flag, .hot-warn .flag { opacity: 1; }
+  .flag rect { fill: var(--terra); }
+  .hot-warn .flag rect { fill: var(--mostarda); }
+  .flag text { font: 700 19px var(--sans); fill: #1d1815; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  /* LEDs: USR0 pisca como heartbeat; USR3 acende na revogação, como o gate faz na placa real */
+  .led { fill: #23303a; transition: fill .2s; }
+  .led-glow { fill: #58b4ff; opacity: 0; filter: blur(7px); }
+  [data-state="TRUSTED"] #usr0 .led, [data-state="SUSPECT"] #usr0 .led { animation: beat 1.2s infinite; }
+  [data-state="TRUSTED"] #usr0 .led-glow, [data-state="SUSPECT"] #usr0 .led-glow { animation: beatglow 1.2s infinite; }
+  [data-state="REVOKED"] #usr3 .led { fill: #8ccbff; }
+  [data-state="REVOKED"] #usr3 .led-glow { opacity: .95; }
+  @keyframes beat { 0%, 12%, 26%, 38% { fill: #8ccbff; } 6%, 20%, 44%, 100% { fill: #23303a; } }
+  @keyframes beatglow { 0%, 12%, 26%, 38% { opacity: .9; } 6%, 20%, 44%, 100% { opacity: 0; } }
+
+  /* Cabo entre a placa e o validador */
+  #cable { fill: none; stroke: var(--caramelo); stroke-width: 7; stroke-linecap: round; transition: stroke .3s, opacity .3s; }
+  [data-state="UNKNOWN"] #cable { opacity: .45; }
+  [data-state="SUSPECT"] #cable { stroke: var(--mostarda); }
+  [data-state="REVOKED"] #cable { stroke: var(--terra); stroke-dasharray: 12 15; }
+  #cut { opacity: 0; transition: opacity .3s; }
+  [data-state="REVOKED"] #cut { opacity: 1; }
+  .cable-label { font: 500 18px var(--sans); fill: var(--muted); }
+
+  /* Faixa de ameaça: diz o que foi detectado, onde e o que o sistema fez */
+  #threat { display: none; grid-template-columns: auto 1fr; gap: 2px 14px; align-items: baseline; margin-top: 12px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--mostarda); background: #3a2f17; }
+  #threat.show { display: grid; }
+  #threat.bad { border-color: var(--terra); background: #3b211a; }
+  #threat b { font-size: 18px; font-weight: 700; color: var(--mostarda); }
+  #threat.bad b { color: var(--terra); }
+  #threat span { font-size: 15px; line-height: 1.35; }
+  #threat small { grid-column: 2; color: var(--muted); font-size: 13px; }
+  .k.ALERT { color: var(--mostarda); }
+
+  /* Ciclo de atestação: as cinco etapas, com o resultado do último veredito */
+  .block { padding-top: 18px; }
+  .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .block-head h2 { margin: 0; font-size: 18px; }
+  .note { color: var(--muted); font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+  .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; list-style: none; margin: 0; padding: 0; }
+  .step { position: relative; padding: 11px 14px 12px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); transition: border-color .25s, background-color .25s; }
+  .step:not(:last-child)::after { content: "›"; position: absolute; right: -11px; top: 50%; transform: translateY(-50%); color: var(--terra); font-size: 20px; line-height: 1; z-index: 1; }
+  .step.run { border-color: var(--state); background: #342a24; }
+  .step.alarm { border-color: var(--terra); background: #3b211a; }
+  .step small { display: block; color: var(--muted); font: 12px var(--mono); }
+  .step strong { display: block; font-size: 18px; font-weight: 700; color: var(--mostarda); }
+  .step.alarm strong { color: var(--terra); }
+  .step p { margin: 1px 0 6px; color: var(--muted); font-size: 13px; line-height: 1.3; }
+  .live { font: 13px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .lights { display: flex; gap: 4px; flex-wrap: wrap; }
+  .light { padding: 1px 7px; border-radius: 4px; font: 600 12px var(--mono); color: var(--muted); border: 1px solid var(--line); }
+  .light.ok.on { background: var(--oliva); border-color: var(--oliva); color: #1d1815; }
+  .light.alert.on { background: var(--mostarda); border-color: var(--mostarda); color: #1d1815; }
+  .light.fail.on { background: var(--terra); border-color: var(--terra); color: #1d1815; }
+
+  /* Camadas de verificação e segurança do protocolo */
+  .pair { display: grid; grid-template-columns: 1.2fr 1fr; gap: 0 34px; }
+  .layer { display: grid; grid-template-columns: 112px 1fr auto; align-items: center; gap: 2px 12px; padding: 8px 12px; margin-bottom: 7px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); }
+  .layer b { font-size: 15px; font-weight: 700; }
+  .layer span { font-size: 13px; line-height: 1.3; }
+  .layer .src { display: block; color: var(--muted); font: 12px var(--mono); }
+  .layer.off { border-style: dashed; background: repeating-linear-gradient(135deg, transparent 0 7px, #ffffff06 7px 14px); color: var(--muted); }
+  .badge { padding: 2px 8px; border-radius: 4px; font: 600 12px var(--mono); white-space: nowrap; color: #1d1815; background: var(--oliva); }
+  .badge.warn { background: var(--mostarda); }
+  .badge.bad { background: var(--terra); }
+  .badge.idle { background: none; color: var(--muted); border: 1px solid var(--line); }
+  .badge.none { background: none; color: var(--ink); border: 1px solid var(--muted); white-space: normal; text-align: center; max-width: 140px; }
+  .advs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 3px; }
+  .adv { padding: 7px 10px; border-radius: 8px; font-size: 13px; line-height: 1.3; background: #2c3324; border: 1px solid #4a5638; }
+  .adv.out { background: none; border: 1px dashed var(--line); color: var(--muted); }
+  .adv small { display: block; margin-bottom: 2px; font: 600 11px var(--mono); color: var(--oliva); }
+  .adv.out small { color: var(--muted); }
+  .protos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .proto { padding: 9px 12px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); transition: border-color .25s; }
+  .proto.hit { border-color: var(--mostarda); }
+  .proto.bad { border-color: var(--terra); background: #3b211a; }
+  .proto strong { display: block; font-size: 15px; font-weight: 700; color: var(--mostarda); }
+  .proto.bad strong { color: var(--terra); }
+  .proto p { margin: 1px 0 5px; font-size: 13px; line-height: 1.3; color: var(--muted); }
+
+  /* CyBOK e créditos */
+  .areas { display: grid; grid-template-columns: 1.35fr repeat(4, 1fr); gap: 8px; }
+  .area { padding: 9px 12px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); }
+  .area small { display: block; color: var(--muted); font: 11px var(--mono); }
+  .area b { display: block; font-size: 14px; line-height: 1.25; color: var(--mostarda); }
+  .area span { font-size: 13px; line-height: 1.3; color: var(--muted); }
+  .area.core { background: var(--terra); border-color: var(--terra); color: #1d1815; }
+  .area.core b, .area.core small, .area.core span { color: #1d1815; }
+  footer { display: flex; flex-wrap: wrap; gap: 4px 18px; justify-content: space-between; margin-top: 4px; padding: 12px 0 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+  footer b { color: var(--ink); font-weight: 600; }
+
+  /* Colunas inferiores */
+  .cols { display: grid; grid-template-columns: 1.15fr 1.35fr .85fr; gap: 0 34px; padding: 18px 0 8px; }
+  .cols > section { min-width: 0; }
+  h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  h2 small { font-size: 13px; font-weight: 500; color: var(--muted); }
+  h2 small.bad { color: var(--terra); font-weight: 600; }
+  h2 small.ok { color: var(--oliva); }
+  .scroll { max-height: 236px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 5px 10px 5px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  td:last-child { padding-right: 0; }
+  .t { color: var(--muted); font: 13px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .k { font-weight: 600; white-space: nowrap; }
+  .k.REVOKED, .k.REPLAY, .k.IO_BLOCKED, .k.REJECT, .k.bad { color: var(--terra); }
+  .k.SUSPECT, .k.GAP, .k.warn { color: var(--mostarda); }
+  .k.TRUSTED { color: var(--oliva); }
+  .k.RESET { color: var(--caramelo); }
+  .n { color: var(--muted); font: 12px var(--mono); margin-left: 4px; }
+  code { font: 13px var(--mono); word-break: break-all; }
+  .where { color: var(--muted); white-space: nowrap; }
+  .empty { padding: 12px 0; border-top: 1px solid var(--line); color: var(--muted); }
+
+  /* Em tela estreita a cena fica pequena: o estado também aparece em texto grande */
+  .compact { display: none; padding: 12px 16px 0; position: relative; }
+  .compact strong { display: block; font-size: 38px; line-height: 1.1; color: var(--state); }
+  @media (max-width: 1100px) { .pair { grid-template-columns: 1fr; gap: 16px; } .areas { grid-template-columns: repeat(2, 1fr); } .area.core { grid-column: 1 / -1; } }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; gap: 20px; } .scroll { max-height: 200px; } .steps { grid-template-columns: repeat(3, 1fr); } .step::after { display: none; } }
+  @media (max-width: 760px) {
+    .wrap { padding: 0 16px; } .compact { display: block; } #conn { margin-left: 0; width: 100%; }
+    .steps, .advs, .protos, .areas { grid-template-columns: 1fr; }
+    .layer { grid-template-columns: 1fr auto; } .layer > span:not(.badge) { grid-column: 1 / -1; grid-row: 2; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before { animation: none !important; transition: none !important; }
+    #pkt, #tok { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ATE<b>BEAGLE</b></h1>
+    <span class="sub">Validador de atestação remota contínua</span>
+    <span id="conn" role="status">conectando</span>
+  </header>
+
+  <main>
+    <div class="stage">
+      <div class="compact"><strong id="c-state">UNKNOWN</strong><span id="c-info" class="sub"></span></div>
+      <svg id="scene" viewBox="0 0 1660 590" role="img" aria-labelledby="scene-title">
+        <title id="scene-title">BeagleBone Black ligada por cabo ao notebook que executa o validador</title>
+        <defs>
+          <pattern id="pins" width="25.4" height="25.4" patternUnits="userSpaceOnUse">
+            <rect width="25.4" height="25.4" fill="#191512"/>
+            <rect x=".6" y=".6" width="24.2" height="24.2" fill="none" stroke="#2c2622"/>
+            <rect x="7.2" y="7.2" width="11" height="11" fill="#040303"/>
+            <rect x="9" y="9" width="7.4" height="7.4" fill="#4a3a1f"/>
+          </pattern>
+          <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ddd8cf"/><stop offset=".5" stop-color="#a9a49b"/><stop offset="1" stop-color="#d0cbc1"/>
+          </linearGradient>
+          <linearGradient id="pcb" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#1b2228"/><stop offset="1" stop-color="#11161a"/>
+          </linearGradient>
+          <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#4a403a"/><stop offset="1" stop-color="#2f2925"/>
+          </linearGradient>
+          <linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#574b43"/><stop offset="1" stop-color="#352d28"/>
+          </linearGradient>
+          <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+            <feDropShadow dx="0" dy="9" stdDeviation="11" flood-color="#0b0705" flood-opacity=".65"/>
+          </filter>
+        </defs>
+
+        <!-- BeagleBone Black, vista superior, em escala: 10 unidades = 1 mm (86,36 x 54,61 mm) -->
+        <g transform="translate(40 20)">
+          <title>BeagleBone Black</title>
+          <rect width="864" height="546" rx="50" fill="url(#pcb)" stroke="#39424a" stroke-width="2" filter="url(#shadow)"/>
+
+          <!-- trilhas -->
+          <g fill="none" stroke="#2a353d" stroke-width="2">
+            <path d="M265 240H312M265 262H312M265 284H312M265 218H312"/>
+            <path d="M462 215C490 215 495 180 512 165M462 240C510 240 520 300 540 296M462 300C495 300 500 370 522 385"/>
+            <path d="M385 332V400C385 430 340 410 298 410M410 332V455M435 332V470"/>
+            <path d="M590 296H660M590 280H650M590 312H668"/>
+            <path d="M310 190C260 150 150 150 124 165M310 310C240 345 120 330 30 322"/>
+          </g>
+
+          <!-- furos de fixação -->
+          <g fill="#0d0a08" stroke="#c9a35a" stroke-width="7">
+            <circle cx="62" cy="50" r="15"/><circle cx="748" cy="42" r="15"/>
+            <circle cx="72" cy="498" r="15"/><circle cx="750" cy="500" r="15"/>
+          </g>
+
+          <!-- P9 e P8: 2 x 23 pinos, passo 2,54 mm -->
+          <g transform="translate(130 8)"><title>Conector de expansão P9</title>
+            <rect width="584.2" height="50.8" fill="url(#pins)" rx="2"/></g>
+          <g transform="translate(130 487.2)"><title>Conector de expansão P8</title>
+            <rect width="584.2" height="50.8" fill="url(#pins)" rx="2"/></g>
+          <g font-family="var(--sans)" font-size="15" fill="#d9d4ca">
+            <text x="104" y="39" font-weight="600">P9</text><text x="104" y="518" font-weight="600">P8</text>
+          </g>
+
+          <!-- USB host, microHDMI, microSD -->
+          <g><title>USB host</title>
+            <rect x="-22" y="100" width="148" height="132" rx="4" fill="url(#metal)" stroke="#6f6a62"/>
+            <rect x="-22" y="119" width="36" height="94" fill="#1c1a18"/>
+            <rect x="-14" y="138" width="24" height="55" fill="#e8e4dc"/>
+            <path d="M34 112H112M34 220H112" stroke="#807b73" stroke-width="3"/>
+          </g>
+          <text x="6" y="256" font-size="15" fill="#d9d4ca" font-family="var(--sans)">USB</text>
+          <g><title>microHDMI, no verso da placa</title>
+            <rect x="-5" y="296" width="30" height="48" rx="3" fill="#8e897f" stroke="#55514a"/>
+            <rect x="-5" y="304" width="9" height="32" fill="#1c1a18"/>
+          </g>
+          <text x="32" y="325" font-size="15" fill="#d9d4ca" font-family="var(--sans)">HDMI</text>
+          <g><title>Slot microSD, no verso da placa</title>
+            <rect x="-4" y="376" width="22" height="76" rx="2" fill="#6f6a62"/>
+          </g>
+          <text x="26" y="418" font-size="15" fill="#d9d4ca" font-family="var(--sans)">microSD</text>
+
+          <!-- capacitor eletrolítico e tântalo -->
+          <g><title>Capacitor de entrada</title>
+            <circle cx="172" cy="118" r="30" fill="#b9b4aa" stroke="#6f6a62" stroke-width="2"/>
+            <circle cx="172" cy="118" r="20" fill="#d4d0c8"/>
+            <path d="M172 98a20 20 0 0 1 0 40" fill="#2a2724"/>
+          </g>
+
+          <!-- serial de depuração J1 (6 pinos) -->
+          <g><title>Serial de depuração, J1</title>
+            <rect x="245" y="82" width="152" height="26" fill="#0e1114" stroke="#d9d4ca" stroke-width="1.5"/>
+            <g fill="#d6b566">
+              <rect x="252" y="87" width="16" height="16"/><rect x="277" y="87" width="16" height="16"/>
+              <rect x="302" y="87" width="16" height="16"/><rect x="327" y="87" width="16" height="16"/>
+              <rect x="352" y="87" width="16" height="16"/><rect x="377" y="87" width="16" height="16"/>
+            </g>
+            <text x="406" y="102" font-size="15" fill="#d9d4ca" font-family="var(--sans)">J1</text>
+          </g>
+
+          <!-- DDR3 -->
+          <g id="c-ddr"><title>Memória DDR3L, 512 MB</title>
+            <rect x="158" y="184" width="104" height="146" rx="3" fill="#201f1e" stroke="#3b3a38"/>
+            <text x="210" y="256" text-anchor="middle" fill="#c9c5bc" font-family="var(--sans)" font-size="19" font-weight="600">DDR3L</text>
+            <text x="210" y="279" text-anchor="middle" fill="#8f8a81" font-family="var(--mono)" font-size="14">512 MB</text>
+            <rect class="halo" x="150" y="176" width="120" height="162" rx="7"/>
+            <g class="flag"><rect x="150" y="146" width="116" height="30" rx="3"/><text id="f-ddr" x="158" y="168"></text></g>
+          </g>
+
+          <!-- AM3358 -->
+          <g id="c-cpu"><title>Processador Sitara AM3358, Cortex-A8</title>
+            <rect x="310" y="176" width="152" height="152" rx="3" fill="#25272a" stroke="#45474a"/>
+            <circle cx="324" cy="190" r="4" fill="#55575a"/>
+            <text x="386" y="245" text-anchor="middle" fill="#dcd8cf" font-family="var(--sans)" font-size="24" font-weight="700">AM3358</text>
+            <text x="386" y="271" text-anchor="middle" fill="#a29d94" font-family="var(--mono)" font-size="14">Cortex-A8</text>
+            <text x="386" y="290" text-anchor="middle" fill="#a29d94" font-family="var(--mono)" font-size="14">1 GHz</text>
+            <rect class="halo" x="302" y="168" width="168" height="168" rx="7"/>
+            <g class="flag"><rect x="302" y="134" width="210" height="30" rx="3"/><text id="f-cpu" x="310" y="156"></text></g>
+          </g>
+
+          <!-- marca na serigrafia -->
+          <text x="166" y="372" fill="#e7e2d8" font-family="var(--sans)" font-size="27" font-weight="700" letter-spacing=".5">beaglebone</text>
+          <text x="166" y="393" fill="#9d988f" font-family="var(--sans)" font-size="15">Black</text>
+
+          <!-- HDMI framer -->
+          <g><title>HDMI framer</title>
+            <rect x="192" y="404" width="92" height="66" rx="2" fill="#1f2022" stroke="#3b3c3e"/>
+            <text x="238" y="442" text-anchor="middle" fill="#8f8a81" font-family="var(--mono)" font-size="13">HDMI</text>
+          </g>
+
+          <!-- PMIC e pads da bateria -->
+          <g><title>PMIC TPS65217C</title>
+            <rect x="512" y="122" width="62" height="62" rx="2" fill="#232426" stroke="#3f4042"/>
+            <text x="543" y="157" text-anchor="middle" fill="#8f8a81" font-family="var(--mono)" font-size="13">PMIC</text>
+          </g>
+          <g fill="#c9a35a"><circle cx="608" cy="86" r="7"/><circle cx="628" cy="86" r="7"/><circle cx="648" cy="86" r="7"/><circle cx="628" cy="106" r="7"/></g>
+
+          <!-- PHY Ethernet e cristal -->
+          <g><title>PHY Ethernet</title>
+            <rect x="540" y="264" width="52" height="52" rx="2" fill="#232426" stroke="#3f4042"/>
+            <text x="566" y="295" text-anchor="middle" fill="#8f8a81" font-family="var(--mono)" font-size="13">PHY</text>
+          </g>
+          <rect x="520" y="220" width="46" height="22" rx="3" fill="#b9b4aa"/>
+
+          <!-- eMMC -->
+          <g id="c-emmc"><title>eMMC, 4 GB, onde está o sistema de arquivos medido no L2</title>
+            <rect x="506" y="346" width="118" height="104" rx="3" fill="#2a2523" stroke="#4a403c"/>
+            <text x="565" y="396" text-anchor="middle" fill="#dcd8cf" font-family="var(--sans)" font-size="22" font-weight="700">eMMC</text>
+            <text x="565" y="419" text-anchor="middle" fill="#a29d94" font-family="var(--mono)" font-size="14">4 GB</text>
+            <rect class="halo" x="498" y="338" width="134" height="120" rx="7"/>
+            <g class="flag"><rect x="498" y="304" width="208" height="30" rx="3"/><text id="f-emmc" x="506" y="326"></text></g>
+          </g>
+
+          <!-- passivos -->
+          <g id="smd"></g>
+
+          <!-- jack DC -->
+          <g><title>Entrada de 5 V DC</title>
+            <rect x="770" y="16" width="112" height="72" rx="5" fill="#16130f" stroke="#39332c" stroke-width="2"/>
+            <rect x="858" y="24" width="26" height="56" fill="#0a0806"/>
+            <circle cx="871" cy="52" r="10" fill="#b9b4aa"/>
+            <text x="798" y="60" fill="#e7e2d8" font-family="var(--sans)" font-size="19" font-weight="600">5 V</text>
+          </g>
+
+          <!-- RJ45 -->
+          <g><title>Ethernet 10/100, RJ45</title>
+            <rect x="660" y="112" width="226" height="178" rx="4" fill="url(#metal)" stroke="#6f6a62" stroke-width="2"/>
+            <rect x="864" y="130" width="22" height="142" fill="#22201e"/>
+            <path d="M676 122H850M676 280H850" stroke="#807b73" stroke-width="3"/>
+            <rect x="684" y="168" width="150" height="52" fill="#f4f0e8"/>
+            <text x="759" y="201" text-anchor="middle" fill="#2c2825" font-family="var(--mono)" font-size="17" font-weight="600">10/100</text>
+          </g>
+          <text x="800" y="312" fill="#d9d4ca" font-family="var(--sans)" font-size="15">Ethernet</text>
+
+          <!-- USB client (miniUSB), botões, LEDs -->
+          <g><title>USB client, miniUSB, por onde a placa fala com o notebook</title>
+            <rect x="836" y="388" width="42" height="58" rx="3" fill="#8e897f" stroke="#55514a"/>
+            <rect x="868" y="398" width="10" height="38" fill="#1c1a18"/>
+          </g>
+          <g><title>Botão de energia</title>
+            <rect x="744" y="340" width="40" height="40" rx="3" fill="#b9b4aa"/><circle cx="764" cy="360" r="11" fill="#1a1715"/></g>
+          <text x="742" y="334" fill="#d9d4ca" font-family="var(--sans)" font-size="13">POWER</text>
+          <g><title>Botão de reset</title>
+            <rect x="744" y="436" width="40" height="40" rx="3" fill="#b9b4aa"/><circle cx="764" cy="456" r="11" fill="#1a1715"/></g>
+          <text x="744" y="430" fill="#d9d4ca" font-family="var(--sans)" font-size="13">RESET</text>
+          <g><title>Chave de boot S2</title>
+            <rect x="124" y="424" width="36" height="36" rx="3" fill="#b9b4aa"/><circle cx="142" cy="442" r="10" fill="#1a1715"/>
+            <text x="124" y="418" fill="#d9d4ca" font-family="var(--sans)" font-size="13">BOOT</text></g>
+
+          <g><title>Quatro LEDs de usuário, USR0 a USR3. O gate acende o USR3 na revogação.</title>
+            <text x="798" y="334" fill="#d9d4ca" font-family="var(--sans)" font-size="13">USR</text>
+            <g id="usr0"><circle class="led-glow" cx="812" cy="348" r="13"/><rect class="led" x="801" y="341" width="22" height="14" rx="2"/></g>
+            <g id="usr1"><circle class="led-glow" cx="812" cy="370" r="13"/><rect class="led" x="801" y="363" width="22" height="14" rx="2"/></g>
+            <g id="usr2"><circle class="led-glow" cx="812" cy="392" r="13"/><rect class="led" x="801" y="385" width="22" height="14" rx="2"/></g>
+            <g id="usr3"><circle class="led-glow" cx="812" cy="414" r="13"/><rect class="led" x="801" y="407" width="22" height="14" rx="2"/></g>
+          </g>
+        </g>
+
+        <!-- Cabo USB, do miniUSB da placa até o notebook -->
+        <path id="cable" d="M920 441C985 441 985 520 1040 520S1085 490 1120 482"/>
+        <circle id="pkt" r="9" fill="#f1e8dc" opacity="0"/>
+        <circle id="tok" r="7" fill="#dca92f" opacity="0"/>
+        <g id="cut" transform="translate(1034 519)">
+          <circle r="21" fill="#1d1815" stroke="#d9683d" stroke-width="4"/>
+          <path d="M-9-9L9 9M9-9L-9 9" stroke="#d9683d" stroke-width="5" stroke-linecap="round"/>
+        </g>
+        <text class="cable-label" x="932" y="378">veredito assinado</text>
+        <text class="cable-label" x="932" y="402" style="fill:#dca92f">token de I/O</text>
+
+        <!-- Notebook: o validador -->
+        <g id="nb">
+          <title>Notebook executando o validador</title>
+          <g filter="url(#shadow)">
+            <path d="M1068 492h562l26 34c3 5 0 10-6 10H1048c-6 0-9-5-6-10z" fill="url(#deck)"/>
+            <rect x="1090" y="26" width="518" height="470" rx="16" fill="url(#lid)" stroke="#5c5047" stroke-width="1.5"/>
+          </g>
+          <rect x="1104" y="40" width="490" height="438" rx="5" fill="#0d0a08"/>
+          <circle cx="1349" cy="33" r="2.5" fill="#15110f"/>
+          <path d="M1062 502h574M1056 512h586M1051 522h596" stroke="#2a2420" stroke-width="3" opacity=".8"/>
+          <rect x="1302" y="526" width="94" height="6" rx="3" fill="#2a2420"/>
+          <rect x="1102" y="484" width="16" height="9" fill="#17130f"/>
+
+          <foreignObject x="1110" y="46" width="478" height="426">
+            <div xmlns="http://www.w3.org/1999/xhtml" class="screen">
+              <div class="scr-top"><span id="s-dev">bbb-01</span><span>validador</span></div>
+              <p class="scr-state" id="s-state" aria-live="polite">UNKNOWN</p>
+              <p class="scr-why quiet" id="s-why">Aguardando o primeiro veredito.</p>
+              <dl>
+                <dt>Época</dt><dd id="s-epoch">0</dd>
+                <dt>Último veredito</dt><dd id="s-age">nenhum</dd>
+                <dt>L2</dt><dd id="s-l2">sem dados</dd>
+                <dt>L3</dt><dd id="s-l3">sem dados</dd>
+                <dt>IA</dt><dd id="s-ia">sem dados</dd>
+              </dl>
+              <div class="dms">
+                <div class="dms-label"><span>Dead man's switch</span><span id="s-dms"></span></div>
+                <div class="dms-track"><div class="dms-fill" id="s-bar"></div></div>
+              </div>
+            </div>
+          </foreignObject>
+        </g>
+      </svg>
+      <p class="caption">Representação da BeagleBone Black em vista superior, com conectores conforme o manual de referência. Os LEDs refletem o estado no validador; microHDMI e microSD ficam no verso da placa real.</p>
+    </div>
+
+    <div id="threat" role="alert"><b id="t-kind"></b><span id="t-what"></span><small id="t-did"></small></div>
+
+    <section class="block" aria-labelledby="h-cycle">
+      <div class="block-head">
+        <h2 id="h-cycle">Ciclo de atestação contínua</h2>
+        <span class="note" id="next"></span>
+      </div>
+      <ol class="steps">
+        <li class="step" id="st1"><small>Etapa 1</small><strong>Coletar</strong><p>Mede o software na placa: arquivos e kernel.</p><div class="live" id="st1v"></div></li>
+        <li class="step" id="st2"><small>Etapa 2</small><strong>Avaliar</strong><p>Compara a medição com a baseline assinada.</p><div class="live" id="st2v"></div></li>
+        <li class="step" id="st3"><small>Etapa 3</small><strong>Decidir</strong><p>Emite o veredito do ciclo.</p>
+          <div class="lights"><span class="light ok" id="v-ok">OK</span><span class="light alert" id="v-alert">Alerta</span><span class="light fail" id="v-fail">Falha</span></div></li>
+        <li class="step" id="st4"><small>Etapa 4</small><strong>Publicar</strong><p>Envia o veredito assinado ao validador externo.</p><div class="live" id="st4v"></div></li>
+        <li class="step" id="st5"><small>Etapa 5</small><strong>Reagir</strong><p>Na falha, revoga a chave e corta o I/O do workload.</p><div class="live" id="st5v"></div></li>
+      </ol>
+    </section>
+
+    <div class="pair">
+      <section class="block" aria-labelledby="h-layers">
+        <div class="block-head"><h2 id="h-layers">Camadas de verificação</h2></div>
+        <div class="layer"><b>L3 Runtime</b><span>Integridade do kernel: syscalls, módulos e taint<span class="src" id="l3-src"></span></span><span class="badge" id="l3-b"></span></div>
+        <div class="layer"><b>L2 Imagem</b><span>Integridade de arquivos: IMA do Linux e hash direto<span class="src" id="l2-src"></span></span><span class="badge" id="l2-b"></span></div>
+        <div class="layer off"><b>L1 Plataforma</b><span>Raiz de confiança no silício, ausente no SoC AM335x GP</span><span class="badge none">Analisada, não implementável</span></div>
+        <div class="layer"><b>IA</b><span>Comportamento atípico na telemetria; leva a SUSPECT e nunca revoga<span class="src" id="ia-src"></span></span><span class="badge" id="ia-b"></span></div>
+        <div class="advs" aria-label="Análise de adversários">
+          <div class="adv"><small>CONTIDO</small>Inserção de código não autorizado</div>
+          <div class="adv"><small>CONTIDO</small>Runtime e rootkit que alteram módulos ou syscalls</div>
+          <div class="adv out"><small>FORA DE ALCANCE</small>Exige raiz de confiança: ring 0 que falsifica o agente, bootkit, ataque físico</div>
+        </div>
+      </section>
+
+      <section class="block" aria-labelledby="h-proto">
+        <div class="block-head"><h2 id="h-proto">Segurança do protocolo</h2></div>
+        <div class="protos">
+          <div class="proto" id="p-replay"><strong>Anti-replay</strong><p>Época monotônica e cadeia prev_hash impedem reenvio.</p><div class="live" id="p-replay-v"></div></div>
+          <div class="proto" id="p-sig"><strong>Assinatura</strong><p>Vereditos assinados com Ed25519; forjados são recusados.</p><div class="live" id="p-sig-v"></div></div>
+          <div class="proto" id="p-dms"><strong>Dead man's switch</strong><p>O silêncio do dispositivo é tratado como falha.</p><div class="live" id="p-dms-v"></div></div>
+          <div class="proto" id="p-gate"><strong>State-Gated I/O</strong><p>A falha invalida o token HMAC do workload.</p><div class="live" id="p-gate-v"></div></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="cols">
+      <section aria-labelledby="h-find">
+        <h2 id="h-find">Achados do último veredito</h2>
+        <div id="findings"></div>
+      </section>
+      <section aria-labelledby="h-ev">
+        <h2 id="h-ev">Eventos</h2>
+        <div class="scroll" id="events" tabindex="0" aria-label="Lista de eventos"></div>
+      </section>
+      <section aria-labelledby="h-data">
+        <h2 id="h-data">Dados do workload <small id="gate"></small></h2>
+        <div class="scroll" id="data" tabindex="0" aria-label="Dados aceitos do workload"></div>
+      </section>
+    </div>
+
+    <section class="block" aria-labelledby="h-cybok">
+      <div class="block-head">
+        <h2 id="h-cybok">Áreas do CyBOK v1.1.0</h2>
+        <span class="note">Categoria Infrastructure Security</span>
+      </div>
+      <div class="areas">
+        <div class="area core"><small>CENTRAL</small><b>Cyber-Physical Systems Security</b><span>Integridade do dispositivo que age sobre o mundo físico</span></div>
+        <div class="area"><small>APOIO</small><b>Hardware Security</b><span>Raiz de confiança e análise do L1</span></div>
+        <div class="area"><small>APOIO</small><b>Applied Cryptography</b><span>Assinatura e anti-replay dos vereditos</span></div>
+        <div class="area"><small>APOIO</small><b>Network Security</b><span>Transporte dos vereditos ao validador</span></div>
+        <div class="area"><small>APOIO</small><b>Physical Layer &amp; Telecommunications</b><span>Canal físico de comunicação</span></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span><b>UNIFOR, Segurança no Ciberespaço, Grupo F.</b> Base técnica: MITRE Continuous Remote Attestation.</span>
+    <span>Nathan · Marcos Mendes · Pedro Nobre · Marcos Vinícius · Tales · Ana Julia</span>
+  </footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hhmmss = t => new Date(t * 1000).toLocaleTimeString("pt-BR");
+const SEV = {critical: "crítica", high: "alta", warning: "aviso", warn: "aviso", info: "informação"};
+const MODEL = {isolation_forest: "Isolation Forest", robust_z: "z-score robusto"};
+// A atestação mede o software no eMMC (L2) e o kernel em execução no processador (L3).
+const LAYER = {L2: ["emmc", "eMMC"], L3: ["cpu", "AM3358"]};
+const FEATURE = {load1: ["cpu", "carga"], procs_total: ["cpu", "processos"], cycle_ms: ["cpu", "duração do ciclo"],
+                 modules: ["cpu", "módulos"], mem_avail_kb: ["ddr", "memória livre"], l2_entries: ["emmc", "medições L2"],
+                 arrival_jitter_s: [null, "jitter de chegada"]};
+const SPOTS = ["emmc", "cpu", "ddr"];
+// O que cada sinal pode indicar. A IA aponta o desvio; a causa é hipótese até a revisão.
+const HINT = {load1: "possível processo oculto, como um minerador", procs_total: "possível processo oculto",
+              cycle_ms: "possível interferência na medição", modules: "possível mudança no kernel",
+              mem_avail_kb: "possível processo oculto consumindo memória", l2_entries: "possível mudança nos arquivos medidos",
+              arrival_jitter_s: "possível atraso proposital dos vereditos"};
+const THREAT = {ALTERED: "arquivo adulterado", UNAUTHORIZED: "arquivo fora da baseline", MISSING: "arquivo da baseline removido",
+                BASELINE_INVALID: "baseline com assinatura inválida", SYSCALL_TABLE: "tabela de syscalls alterada: possível rootkit",
+                MODULE_NEW: "módulo carregado após o boot: possível rootkit", MODULE_GONE: "módulo do boot descarregado",
+                TAINT: "kernel marcado como tainted: código fora do padrão", ALGO_MISMATCH: "algoritmo de hash diferente da baseline"};
+
+function threat(d, f) {
+  const list = f.map(x => `${THREAT[x.kind] || x.kind} (${x.subject})`).join("; ");
+  if (d.state === "REVOKED")
+    return ["bad", "Ameaça confirmada", list || d.reason, "Resposta automática: chave revogada e I/O do workload cortado. Só sai por re-provisionamento."];
+  if (d.state === "SUSPECT" && d.anomaly) {
+    const n = FEATURE[d.anomaly.feature];
+    return ["", "Alerta", `Desvio em ${n ? n[1] : d.anomaly.feature}: ${HINT[d.anomaly.feature] || "comportamento fora do perfil"}.${list ? " " + list + "." : ""}`,
+            "Detectado pela IA. Não revoga: precisa de revisão humana."];
+  }
+  if (f.length) return ["", "Alerta", `${list}.`, "Registrado no validador. Não revoga: precisa de revisão humana."];
+  return null;
+}
+
+// Passivos da placa: posições fixas, em pontos livres entre os componentes.
+const SMD = [[118,268],[118,284],[140,300],[280,132],[300,132],[320,132],[440,126],[460,126],[472,144],[474,352],[474,372],
+  [474,392],[316,440],[340,440],[364,440],[316,460],[340,460],[420,408],[440,408],[420,428],[440,428],
+  [640,340],[660,350],[648,378],[668,396],[646,420],[670,440],[580,108],[492,196],[492,316],[60,444],[86,444],[64,350],[84,352],
+  [198,484-14],[250,484-14],[712,320],[712,350],[712,380],[712,420],[712,450]];
+$("smd").innerHTML = SMD.map(([x, y], i) =>
+  `<rect x="${x}" y="${y}" width="15" height="8" rx="1" fill="${i % 3 ? "#7d6a4c" : "#2b2a28"}" stroke="#b9a980" stroke-width=".6"/>`).join("");
+
+function setSpot(name, cls, label) {
+  $("c-" + name).classList.remove("hot-bad", "hot-warn");
+  if (cls) {
+    const text = $("f-" + name);
+    $("c-" + name).classList.add(cls);
+    text.textContent = label;
+    text.previousElementSibling.setAttribute("width", text.getComputedTextLength() + 16);
+  }
+}
+
+// Pacotes percorrem o cabo: o veredito vai até o validador e o token volta.
+const cable = $("cable");
+const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function travel(dot, from, to, ms) {
+  return new Promise(done => {
+    if (calm) return done();
+    const len = cable.getTotalLength(), t0 = performance.now();
+    dot.setAttribute("opacity", 1);
+    (function step(now) {
+      const k = Math.min(1, (now - t0) / ms), p = cable.getPointAtLength(len * (from + (to - from) * k));
+      dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y);
+      if (k < 1) requestAnimationFrame(step); else { dot.setAttribute("opacity", 0); done(); }
+    })(t0);
+  });
+}
+let lastEpoch = null;
+async function pulse(accepted) {
+  // A chegada de um veredito percorre as etapas do ciclo que ele acabou de cumprir.
+  if (!calm) [1, 2, 3, 4, 5].forEach(n => {
+    setTimeout(() => $("st" + n).classList.add("run"), (n - 1) * 170);
+    setTimeout(() => $("st" + n).classList.remove("run"), (n - 1) * 170 + 420);
+  });
+  await travel($("pkt"), 0, 1, 650);
+  if (accepted) await travel($("tok"), 1, 0, 550);
+}
+
+// Último evento de um tipo, na lista que o validador envia (mais recente primeiro).
+const lastEvent = (evs, test) => evs.find(test);
+function renderProcess(s, d, age, limit, live, f, blocked) {
+  const silent = (d.reason || "").startsWith("dead man");
+  const none = d.state === "UNKNOWN" || !d.l2;
+  const stale = none || silent;
+  const worst = f.some(x => x.severity === "critical" || x.severity === "high");
+  const fail = d.state === "REVOKED";
+  const alert = !fail && (d.state === "SUSPECT" || f.length > 0);
+
+  // Etapas: sempre o resultado do último veredito recebido.
+  $("st1v").textContent = stale ? (silent ? "sem medição" : "aguardando") :`${d.l2.entries ?? 0} arquivos, ${d.l3 ? d.l3.modules : "?"} módulos`;
+  $("st2v").textContent = stale ? (silent ? "sem veredito" : "aguardando") : f.length ? `${f.length} ${f.length > 1 ? "achados" : "achado"}` : "confere com a baseline";
+  $("v-ok").classList.toggle("on", !none && !fail && !alert);
+  $("v-alert").classList.toggle("on", alert);
+  $("v-fail").classList.toggle("on", fail);
+  $("st4v").textContent = none ? "aguardando" : silent ? `silêncio após a época ${d.last_epoch}` : `época ${d.last_epoch}, Ed25519`;
+  $("st5v").textContent = fail ? "chave revogada, I/O cortado" : alert ? "revisão humana, sem revogar" : none ? "aguardando" : "nenhuma ação necessária";
+  $("st5").classList.toggle("alarm", fail);
+  $("next").textContent = fail ? "ciclo interrompido: só sai por re-provisionamento"
+    : live && age != null ? `intervalo ${d.interval_s} s, próximo em ${Math.max(0, d.interval_s - age).toFixed(0)} s` : "aguardando o primeiro veredito";
+
+  // Camadas: o selo vem dos achados da própria camada.
+  const layerBadge = (el, layer, seen) => {
+    const mine = f.filter(x => x.layer === layer);
+    const bad = mine.some(x => x.severity === "critical" || x.severity === "high");
+    el.textContent = !seen ? (silent ? "SEM MEDIÇÃO" : "AGUARDANDO") : bad ? "FALHA" : mine.length ? "ALERTA" : "ATIVA";
+    el.className = "badge" + (!seen ? " idle" : bad ? " bad" : mine.length ? " warn" : "");
+  };
+  layerBadge($("l3-b"), "L3", !stale);
+  layerBadge($("l2-b"), "L2", !stale);
+  $("l3-src").textContent = d.l3 ? `fonte: ${d.l3.syscall_source}, ${d.l3.modules} módulos` : "";
+  $("l2-src").textContent = d.l2 ? `fonte: ${d.l2.source}, ${d.l2.entries ?? 0} medições` : "";
+  const a = d.anomaly;
+  $("ia-b").textContent = !a ? "AGUARDANDO" : !a.ready ? "AQUECENDO" : a.anomaly ? "SUSPEITA" : "ATIVA";
+  $("ia-b").className = "badge" + (!a || !a.ready ? " idle" : a.anomaly ? " warn" : "");
+  $("ia-src").textContent = a ? `modelo: ${MODEL[a.model] || a.model}${a.ready ? `, pontuação ${a.score}` : ""}` : "";
+
+  // Protocolo: mostra o último ataque que cada proteção de fato recusou.
+  const seenAgo = e => e ? `${(s.now - e.t).toFixed(0)} s atrás` : "";
+  const replay = lastEvent(s.events, e => e.kind === "REPLAY");
+  const forged = lastEvent(s.events, e => e.kind === "REJECT");
+  const broken = (d.reason || "").includes("cadeia") || (d.reason || "").includes("perdidos");
+  $("p-replay-v").textContent = broken ? "cadeia quebrada: revogado" : replay ? `replay recusado ${seenAgo(replay)}` : `época ${d.last_epoch}, sem replay`;
+  $("p-replay").classList.toggle("bad", broken);
+  $("p-replay").classList.toggle("hit", !broken && !!replay && s.now - replay.t < 30);
+  $("p-sig-v").textContent = forged ? `forjado recusado ${seenAgo(forged)}` : "nenhum veredito forjado";
+  $("p-sig").classList.toggle("hit", !!forged && s.now - forged.t < 30);
+  $("p-dms-v").textContent = silent ? "disparado: revogado" : live && age != null ? `${age.toFixed(0)} de ${limit.toFixed(0)} s de silêncio` : `limite de 2,5 intervalos`;
+  $("p-dms").classList.toggle("bad", silent);
+  $("p-gate-v").textContent = blocked ? "workload bloqueado" : s.data.length ? "workload liberado" : "aguardando";
+  $("p-gate").classList.toggle("bad", !!blocked);
+}
+
+function compressEvents(evs) {
+  const out = [];
+  for (const e of evs) {
+    const prev = out[out.length - 1];
+    if (prev && prev.kind === e.kind && prev.msg === e.msg) prev.count++;
+    else out.push({...e, count: 1});
+  }
+  return out;
+}
+
+function why(d) {
+  if (d.reason) return d.reason;
+  if (d.state === "SUSPECT" && d.anomaly) {
+    const f = FEATURE[d.anomaly.feature];
+    return `IA: desvio em ${f ? f[1] : d.anomaly.feature}. Revisão humana; não revoga.`;
+  }
+  if (d.state === "TRUSTED") return "Software confere com a baseline assinada.";
+  return "Aguardando o primeiro veredito.";
+}
+
+function render(s) {
+  const d = s.devices[0];
+  if (!d) return;
+  document.documentElement.dataset.state = d.state;
+  const age = d.last_seen ? s.now - d.last_seen : null;
+  const limit = d.interval_s * 2.5;
+  // Depois de um reset, o validador ainda guarda o último ciclo: em UNKNOWN ele não vale mais.
+  if (d.state === "UNKNOWN") { d.l2 = d.l3 = d.anomaly = null; }
+  const a = d.anomaly;
+  const ia = !a ? "sem dados" : a.ready ? `${MODEL[a.model] || a.model}, ${a.score}` : "aquecendo";
+
+  $("s-dev").textContent = d.device_id;
+  $("s-state").textContent = $("c-state").textContent = d.state;
+  $("s-why").textContent = why(d);
+  $("s-why").classList.toggle("quiet", d.state === "UNKNOWN" || d.state === "TRUSTED");
+  $("s-epoch").textContent = d.last_epoch;
+  $("s-age").textContent = age == null ? "nenhum" : `${age.toFixed(0)} s atrás`;
+  $("s-l2").textContent = d.l2 ? `${d.l2.source}, ${d.l2.entries ?? 0} medições` : "sem dados";
+  $("s-l3").textContent = d.l3 ? `${d.l3.syscall_source}, ${d.l3.modules} módulos` : "sem dados";
+  $("s-ia").textContent = ia;
+  $("c-info").textContent = `Época ${d.last_epoch}, ${age == null ? "sem veredito" : age.toFixed(0) + " s atrás"}`;
+
+  // A barra só mede o silêncio de um dispositivo ativo; revogado já é o fim dela.
+  const live = d.state === "TRUSTED" || d.state === "SUSPECT";
+  const frac = d.state === "REVOKED" ? 1 : live && age != null ? Math.min(1, age / limit) : 0;
+  $("s-bar").style.transform = `scaleX(${frac})`;
+  $("s-bar").classList.toggle("high", frac > .66);
+  $("s-dms").textContent = d.state === "REVOKED" ? "revogado" : live && age != null ? `${age.toFixed(0)} / ${limit.toFixed(0)} s` : "";
+
+  // Achados e destaque na placa. Em UNKNOWN os achados são do ciclo anterior ao reset.
+  const f = d.state === "UNKNOWN" ? [] : d.findings || [];
+  const spots = {};
+  for (const x of f) {
+    const [spot] = LAYER[x.layer] || [];
+    if (!spot) continue;
+    const bad = x.severity === "critical" || x.severity === "high";
+    if (!spots[spot] || (bad && spots[spot][0] !== "hot-bad")) spots[spot] = [bad ? "hot-bad" : "hot-warn", `${x.layer} ${x.kind}`];
+  }
+  if (d.state === "SUSPECT" && a && FEATURE[a.feature] && FEATURE[a.feature][0]) {
+    const [spot, name] = FEATURE[a.feature];
+    if (!spots[spot]) spots[spot] = ["hot-warn", `IA: ${name}`];
+  }
+  SPOTS.forEach(n => setSpot(n, ...(spots[n] || [null])));
+
+  $("findings").innerHTML = f.length
+    ? `<div class="scroll"><table>${f.map(x => {
+        const bad = x.severity === "critical" || x.severity === "high";
+        const where = (LAYER[x.layer] || [])[1] || "";
+        return `<tr><td class="k ${bad ? "bad" : "warn"}">${esc(x.layer)} ${esc(x.kind)}</td><td><code>${esc(x.subject)}</code></td><td class="where">${esc(where)}, ${esc(SEV[x.severity] || x.severity)}</td></tr>`;
+      }).join("")}</table></div>`
+    : `<div class="empty">${d.state === "REVOKED" ? "Sem achado de medição. Veja o motivo no validador." : "Nenhum achado."}</div>`;
+
+  $("events").innerHTML = s.events.length
+    ? `<table>${compressEvents(s.events).map(e =>
+        `<tr><td class="t">${hhmmss(e.t)}</td><td class="k ${esc(e.kind)}">${esc(e.kind)}${e.count > 1 ? `<span class="n">x${e.count}</span>` : ""}</td><td>${esc(e.msg)}</td></tr>`).join("")}</table>`
+    : `<div class="empty">Nenhum evento.</div>`;
+
+  // Bloqueado se a última tentativa registrada do workload foi recusada.
+  const blocked = s.events.find(e => e.kind === "IO_BLOCKED");
+  const isBlocked = blocked && (!s.data.length || blocked.t > s.data[0].t);
+  $("gate").textContent = !s.data.length && !blocked ? "" : isBlocked ? "I/O bloqueado" : "I/O liberado";
+  $("gate").className = isBlocked ? "bad" : "ok";
+  $("data").innerHTML = s.data.length
+    ? `<table>${s.data.map(e => {
+        const v = e.value && e.value.temp_c != null ? `${String(e.value.temp_c).replace(".", ",")} °C` : JSON.stringify(e.value);
+        return `<tr><td class="t">${hhmmss(e.t)}</td><td>${esc(e.device)}</td><td style="text-align:right;font-family:var(--mono)">${esc(v)}</td></tr>`;
+      }).join("")}</table>`
+    : `<div class="empty">Nenhum dado aceito.</div>`;
+
+  renderProcess(s, d, age, limit, live, f, isBlocked);
+
+  const t = threat(d, f);
+  $("threat").className = t ? `show ${t[0]}` : "";
+  if (t) { $("t-kind").textContent = t[1]; $("t-what").textContent = t[2]; $("t-did").textContent = t[3]; }
+  if (d.state === "TRUSTED" && f.length) {
+    $("s-why").textContent = "Alerta ativo: veja a ameaça abaixo. Sem revogação.";
+    $("s-why").classList.remove("quiet");
+  }
+
+  if (lastEpoch !== null && d.last_epoch > lastEpoch) pulse(live);
+  lastEpoch = d.last_epoch;
+}
+
+async function tick() {
+  const conn = $("conn");
+  try {
+    const r = await fetch("/api/state", {cache: "no-store"});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const s = await r.json();
+    render(s);
+    conn.textContent = hhmmss(s.now);
+    conn.classList.remove("down");
+  } catch {
+    conn.textContent = "Validador sem resposta. Os dados abaixo estão parados.";
+    conn.classList.add("down");
+  }
+}
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+[Unit]
+Description=ATEBEAGLE workload de demonstracao (sensor)
+After=atebeagle-agent.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/atebeagle/workload.py --url __VALIDATOR__ --token /run/atebeagle/workload.token
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONDONTWRITEBYTECODE=1
+# roda como root para que o IMA (politica tcb, uid=0) meça o script a cada execucao
+ProtectSystem=strict
+ReadOnlyPaths=/run/atebeagle
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

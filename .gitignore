@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+keys/
+*.key
+baseline.json
+validator.json
+validator_state.json
+.bbb_root/
+# cópia antiga do código e duplicata de docs/arquitetura.drawio
+Atebeagle.zip
+/Arquitetura.drawio
+kernel/*.ko
+kernel/*.o
+kernel/*.mod*
+kernel/.*.cmd
+kernel/Module.symvers
+kernel/modules.order

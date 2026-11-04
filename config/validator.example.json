@@ -1,0 +1,15 @@
+{
+  "listen": "0.0.0.0",
+  "port": 8700,
+  "state_file": "validator_state.json",
+  "admin_token": "TROQUE-ESTE-TOKEN",
+  "devices": {
+    "bbb-01": {
+      "pubkey": "COLE AQUI O CONTEUDO DE keys/device.pub",
+      "baseline": "baseline.json"
+    }
+  },
+  "deadman_factor": 2.5,
+  "max_clock_skew_s": 120,
+  "anomaly": { "enabled": true, "warmup": 20, "threshold": 6.0 }
+}

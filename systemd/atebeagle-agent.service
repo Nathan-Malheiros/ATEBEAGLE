@@ -1,0 +1,22 @@
+[Unit]
+Description=ATEBEAGLE agente de atestacao remota continua
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/atebeagle/src
+ExecStart=/usr/bin/python3 -m atebeagle.agent --config /etc/atebeagle/agent.json
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=always
+RestartSec=5
+RuntimeDirectory=atebeagle
+RuntimeDirectoryPreserve=yes
+# endurecimento (o agente precisa de root para ler IMA e kallsyms)
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadWritePaths=/var/lib/atebeagle /run/atebeagle /sys/class/leds
+
+[Install]
+WantedBy=multi-user.target
