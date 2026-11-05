@@ -5,16 +5,18 @@ comprovado e o que ainda precisa ser revisado por uma pessoa antes da entrega da
 ENT#8. Nada aqui substitui a leitura do código: confira cada item e marque a caixa
 somente depois de verificar.
 
-Revisado até 04/11/2026.
+Revisado até 05/11/2026.
 
 ## 1. Atenção antes de tudo
 
 Estes pontos podem atrapalhar a bancada ou a apresentação. Leia primeiro.
 
-- [ ] **Só houve teste em simulação.** Nada rodou na BeagleBone. IMA, módulo
-  `atebeagle_kint`, LED USR3 e serviços systemd seguem sem teste real.
-- [ ] **Só houve teste no Windows depois das últimas mudanças.** Os 22 testes passaram
-  no Windows com Python 3.14. Repita `python3 -m pytest -q` no Linux ou na placa.
+- [ ] **Ainda sem teste na placa física.** O ciclo completo foi validado numa imagem
+  Debian da placa emulada em ARM (qemu) — ver seção 9 —, não na BeagleBone real. A carga
+  do módulo `atebeagle_kint`, a detecção na sys_call_table, o LED USR3, a rede USB e os
+  serviços systemd em boot real seguem sem teste na placa.
+- [x] **Os 22 testes passam no Python 3.7 da imagem** (Linux, ARM emulado via qemu), além
+  do Windows com Python 3.14.
 - [ ] **A ordem de instalação do plano está errada.** `scripts/setup_board.sh` encerra
   com erro se `/etc/atebeagle/device.key` não existir, mas o plano e o README só enviam
   a chave depois dele. Veja a seção 4.
@@ -30,7 +32,7 @@ Estes pontos podem atrapalhar a bancada ou a apresentação. Leia primeiro.
 
 | Item | Situação | Como foi verificado |
 |---|---|---|
-| Testes automatizados | Comprovado no Windows | 22 testes passando |
+| Testes automatizados | Comprovado no Windows e no Python 3.7 (ARM emulado) | 22 testes passando nos dois |
 | `tamper`, `drop`, `delete`, `module`, `chain` revogam | Comprovado em simulação | Roteiro consultando `/api/state` |
 | `silence` revoga em cerca de 12 s (intervalo de 5 s) | Comprovado em simulação | Roteiro e captura de tela |
 | `replay` e `forge` são recusados sem revogar | Comprovado em simulação | Roteiro e lista de eventos |
@@ -43,9 +45,10 @@ Estes pontos podem atrapalhar a bancada ou a apresentação. Leia primeiro.
 | Limpeza de dados antigos em UNKNOWN | **Não visto na tela** | Só leitura do código |
 | Texto "revisão humana" na etapa Reagir em alerta | **Não visto na tela** | Só leitura do código |
 | Coletor IMA e híbrido com log real | **Não testado** | Só parser com arquivo de exemplo |
-| Módulo `atebeagle_kint` | **Nunca compilado** | Precisa dos headers da placa |
+| Módulo `atebeagle_kint` | **Compila** (vermagic 4.19.94-ti-r42); não carregado na placa | Compilado com os headers do kernel na imagem |
 | `provision.sh baseline` e `push` | **Não testados** | Só `keys` foi testado, com chaves descartáveis |
-| `attacks.sh` e `check_board.sh` | **Não testados** | Precisam da placa |
+| `attacks.sh`: tamper/drop/delete | Comprovado na imagem ARM emulada | FAIL com ALTERED/UNAUTHORIZED/MISSING; restaura para PASS |
+| `attacks.sh`: module/silence/netcut; `check_board.sh` | **Não testados** | Precisam da placa (kernel/hardware reais) |
 
 ## 3. O que mudou e o que revisar
 
@@ -209,3 +212,24 @@ HTML, recarregue a página. Mudanças em Python exigem reiniciar a demo.
 
 Comandos: `tamper`, `drop`, `delete`, `module`, `miner`, `taint`, `silence`, `replay`,
 `forge`, `chain`, `reset`, `quit`.
+
+## 9. Imagem pré-provisionada (preparada no PC, fora do repositório)
+
+Para adiantar a bancada, foi montada uma imagem Debian da placa (base 10.3 IoT, Buster,
+kernel 4.19.94-ti-r42, com Cloud9) com o ATEBEAGLE já instalado, usando WSL + emulação
+ARM (qemu) para operar o sistema da placa sem a placa. A imagem e os insumos ficam em
+`D:\ATEBEAGLE-build` e **não são versionados**.
+
+Já vem pronto na imagem:
+
+- `python3-cryptography`, `pytest` e os headers do kernel; `apt` apontando para
+  `archive.debian.org` (Buster saiu de suporte).
+- Projeto em `/opt/atebeagle`; módulo `atebeagle_kint.ko` compilado e instalado em
+  `/lib/modules/.../extra` (carrega no boot, antes do agente).
+- Coletor `fs` (não há IMA neste kernel); baseline assinada e **verificada pelo Python
+  3.7 da própria placa**; serviços `atebeagle-agent` e `atebeagle-workload` habilitados.
+- Caminhos monitorados: `/usr/local/bin` e `/opt/atebeagle`.
+
+Fora do Git (contêm segredos ou a `device.key`): as chaves, `validator.json` (com
+`admin_token`) e a própria imagem. Passo a passo da gravação e dos testes na placa:
+`D:\ATEBEAGLE-build\LEIA-ME.md`.
