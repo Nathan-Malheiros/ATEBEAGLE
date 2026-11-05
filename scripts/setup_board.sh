@@ -16,6 +16,9 @@ install -d -m 755 /opt/atebeagle /etc/atebeagle
 install -d -m 700 /var/lib/atebeagle
 rsync -a --delete --exclude tests --exclude .git "$SRC/" /opt/atebeagle/src/ 2>/dev/null || cp -r "$SRC/." /opt/atebeagle/src/
 install -m 755 "$SRC/workload/sensor.py" /opt/atebeagle/workload.py
+# O agente roda como root a partir daqui: copia vinda de NTFS/WSL pode chegar com 777.
+find /opt/atebeagle ! -type l -perm /022 -exec chmod go-w {} +
+install -m 755 "$SRC/scripts/wait-modules.sh" /etc/atebeagle/wait-modules.sh
 
 for f in device.key baseline_authority.pub; do
   [ -f "/etc/atebeagle/$f" ] || { echo "falta /etc/atebeagle/$f (copie do notebook)"; exit 1; }

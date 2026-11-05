@@ -11,10 +11,10 @@ Revisado até 05/11/2026.
 
 Estes pontos podem atrapalhar a bancada ou a apresentação. Leia primeiro.
 
-- [ ] **Ainda sem teste na placa física.** O ciclo completo foi validado numa imagem
-  Debian da placa emulada em ARM (qemu) — ver seção 9 —, não na BeagleBone real. A carga
-  do módulo `atebeagle_kint`, a detecção na sys_call_table, o LED USR3, a rede USB e os
-  serviços systemd em boot real seguem sem teste na placa.
+- [ ] **Teste na placa física ainda parcial** (ver seção 10). Boot pelo microSD, carga do
+  `atebeagle_kint`, rede USB, serviços systemd e ciclos PASS do agente já rodaram na
+  BeagleBone real. Faltam o validador na placa real, os ataques e a detecção de
+  alteração na sys_call_table.
 - [x] **Os 22 testes passam no Python 3.7 da imagem** (Linux, ARM emulado via qemu), além
   do Windows com Python 3.14.
 - [ ] **A ordem de instalação do plano está errada.** `scripts/setup_board.sh` encerra
@@ -233,3 +233,65 @@ Já vem pronto na imagem:
 Fora do Git (contêm segredos ou a `device.key`): as chaves, `validator.json` (com
 `admin_token`) e a própria imagem. Passo a passo da gravação e dos testes na placa:
 `D:\ATEBEAGLE-build\LEIA-ME.md`.
+
+## 10. Primeiro boot na placa real (05/11/2026)
+
+**Falso positivo corrigido.** O agente subia aos 17 s e registrava a referência L3 com 11
+módulos; os módulos da PRU carregam por volta de 60 s. Os 10 restantes viravam
+`MODULE_NEW`, o status ia a FAIL e o gate parava o workload e acendia o USR3 a cada boot.
+
+Agora `scripts/wait-modules.sh` segura o agente até 120 s de uptime e 30 s sem mudanças,
+com limite em 240 s. Depois do boot, 4 ciclos seguidos em PASS, sem achados e com 21
+módulos na referência. Sem validador, o workload segue em `BLOQUEADO` por falta de token,
+como esperado.
+
+Também na placa: `/opt/atebeagle` estava com permissão 777 e foi corrigido para 755, e o
+log do agente agora chega ao journal.
+
+- [ ] A correção no repositório (`setup_board.sh`, unit do agente) **não foi testada por
+  uma reinstalação**. Na placa, ela foi aplicada à mão, com um drop-in do systemd e
+  `/etc/atebeagle/wait-modules.sh`. A imagem em `D:\ATEBEAGLE-build` não tem a correção.
+- [ ] Sincronizar `src/` na placa exige nova baseline assinada, porque esses arquivos
+  estão medidos.
+- [ ] **Decisão do grupo:** a espera amplia a janela já documentada em `docs/ANALISE_L1.md`.
+  Avaliar a lista de módulos permitidos na baseline assinada.
+- [ ] **Relógio.** A placa não tem bateria de RTC e estava em 06/04/2020. Depois do acerto
+  manual e de um reboot, ficou cerca de 20 s atrasada, dentro da janela de 120 s. Confira
+  com `date -u` antes de cada demo, principalmente depois de ficar desligada.
+- [ ] A senha padrão `temppwd` continua ativa.
+
+### 10.1 Ataques na placa real (05/11/2026, intervalo de 60 s)
+
+Validador temporário no notebook, com a chave pública e a baseline da própria placa, e
+não a configuração original. Repetir com ela. O tempo depende do ponto do ciclo em que o
+ataque cai.
+
+| Teste | Resultado | Tempo |
+|---|---|---|
+| `tamper` | REVOKED, L2 ALTERED; USR3 aceso, workload parado | 53 s |
+| `drop` | REVOKED, L2 UNAUTHORIZED; USR3 aceso, workload parado | 42 s |
+| `delete` | REVOKED, L2 MISSING; USR3 aceso, workload parado | 42 s |
+| `module` | REVOKED, L3 MODULE_NEW; USR3 aceso, workload parado | 41 s |
+| `silence` (`attacks.sh`, SIGKILL) | **Não revogou**: `Restart=always` devolve o agente em 5 s | Mais de 3 min em TRUSTED |
+| `systemctl stop` do agente | REVOKED, dead man's switch; USR3 apagado, workload ativo | 131 s |
+| Replay e veredito forjado | Recusados com 403, sem revogar | Imediato |
+| 18,7 min sem ataques | Só TRUSTED, sem SUSPECT, ALERT ou REVOKED | |
+| Carga de CPU com a IA aquecida | SUSPECT (`cycle_ms`, z=21), sem revogar | 57 s |
+| `netcut` | REVOKED, dead man's switch. **Medição não conclusiva**, ver abaixo | 140 s |
+
+- [ ] **Corrigir o `silence`.** Como está, o ataque da demo não revoga. Decidir entre mudar
+  o ataque (`systemctl stop`) ou o unit, e atualizar o roteiro.
+- [ ] **Silêncio não aciona o gate local.** Sem agente, USR3 e workload não mudam na placa;
+  o bloqueio vem do validador, que invalida os tokens. Descrever assim na apresentação.
+- [ ] **Reinício espontâneo não explicado.** A placa reiniciou por volta de 20:06 UTC, no
+  início do `netcut`, e o journal do boot anterior não foi preservado. Causa desconhecida:
+  investigar alimentação pelo USB e repetir o `netcut`.
+- [ ] **O relógio regride no reboot.** Nesse reinício a placa voltou cerca de 49 min. Fora
+  da janela de 120 s os vereditos são recusados, então o relógio precisa ser acertado
+  depois de **todo** boot.
+- [ ] O teste de reboot com validador ativo não foi feito. Com 120 s de espera, somados ao
+  boot, o silêncio pode chegar perto dos 150 s do dead man's switch.
+- [ ] `attacks.sh restore` falhava depois de `delete` e foi corrigido no repositório. A
+  cópia na placa mantém o bug até a próxima baseline: mova `/root/workload.py` à mão.
+- [ ] Notebook em modo de espera interrompe o validador. Desative a suspensão na demo.
+- `check_board.sh` confirmou: kernel sem IMA (`CONFIG_IMA` desligado), então o coletor é `fs`.

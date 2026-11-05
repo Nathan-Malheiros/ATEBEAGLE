@@ -17,6 +17,10 @@
   agente, assinando vereditos falsos com a chave roubada.
 - Bootkit (MLO/U-Boot adulterado) antes do kernel: a referência de boot já nasce
   comprometida.
+- Módulo carregado nos primeiros 2 minutos de boot: o agente espera os módulos do
+  sistema estabilizarem (`scripts/wait-modules.sh`) antes de registrar a referência
+  L3, então um módulo malicioso carregado nessa janela entra na referência e não é
+  detectado. Fechar isso exige lista de módulos permitidos na baseline assinada.
 - Ataques físicos (JTAG, leitura do eMMC, glitching).
 
 ## Como seria fechado

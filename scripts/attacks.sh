@@ -17,9 +17,9 @@ case "${1:-}" in
     ip link set usb0 down; sleep 200; ip link set usb0 up ;;
   replay)     # Replay: reenvia um veredito antigo capturado (rode no notebook com o JSON salvo)
     curl -s -X POST -H 'Content-Type: application/json' --data @"${2:?veredito.json}" "${3:?http://ip:8700}/verdict"; echo ;;
-  restore)    # desfaz tamper/drop
-    sed -i '/atacante/d' /opt/atebeagle/workload.py; rm -f /usr/local/bin/backdoor
-    mv /root/workload.py /opt/atebeagle/ 2>/dev/null || true ;;
+  restore)    # desfaz tamper/drop/delete (o arquivo volta antes do sed: depois de delete ele não está lá)
+    mv /root/workload.py /opt/atebeagle/ 2>/dev/null || true
+    sed -i '/atacante/d' /opt/atebeagle/workload.py; rm -f /usr/local/bin/backdoor ;;
   *) echo "uso: sudo $0 tamper|drop|delete|module|silence|netcut|replay|restore"; exit 1 ;;
 esac
 echo "ataque '$1' executado. Olhe o painel do validador."
