@@ -6,8 +6,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/atebeagle/src
+ExecStartPre=/bin/bash /etc/atebeagle/wait-modules.sh
+TimeoutStartSec=300
 ExecStart=/usr/bin/python3 -m atebeagle.agent --config /etc/atebeagle/agent.json
 Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
 Restart=always
 RestartSec=5
 RuntimeDirectory=atebeagle
