@@ -16,7 +16,7 @@ Estes pontos podem atrapalhar a bancada ou a apresentação. Leia primeiro.
   BeagleBone real, e em 06/11 também o validador com a configuração original e os ataques
   (seção 10.3). Falta a detecção de alteração na sys_call_table.
 - [x] **Os 22 testes do núcleo passam no Python 3.7 da imagem** (Linux, ARM emulado via
-  qemu). No Windows com Python 3.14 passam os 48, incluindo o console e o menu, que rodam
+  qemu). No Windows com Python 3.14 passam os 67, incluindo o console e o menu, que rodam
   só no PC e não foram testados no Python 3.7.
 - [ ] **A ordem de instalação do plano está errada.** `scripts/setup_board.sh` encerra
   com erro se `/etc/atebeagle/device.key` não existir, mas o plano e o README só enviam
@@ -33,7 +33,7 @@ Estes pontos podem atrapalhar a bancada ou a apresentação. Leia primeiro.
 
 | Item | Situação | Como foi verificado |
 |---|---|---|
-| Testes automatizados | Núcleo no Windows e no Python 3.7 (ARM emulado); console e menu só no Windows | 22 nos dois; 48 no Windows |
+| Testes automatizados | Núcleo no Windows e no Python 3.7 (ARM emulado); console e menu só no Windows | 22 nos dois; 67 no Windows |
 | Ataques na placa real, com a configuração original | Comprovado em 06/11, exceto a sys_call_table | Console na placa real, seção 10.3 |
 | Replay e veredito forjado na placa real | Comprovado em 06/11 | Veredito capturado em `usb0` e reenviado; eventos REPLAY e REJECT |
 | Reboot com validador ativo | Medido uma vez, no caso mais favorável | Seção 10.3 |
@@ -379,9 +379,10 @@ A coluna do console usa a captura corrigida.
 
 ### 10.4 Console de ataque, planta e menu
 
-`atebeagle.bat` abre o menu: inicia o sistema, verifica a placa, acerta o relógio, recupera a
-placa e abre as três telas. Monitoramento em `http://localhost:8700`; pasteurizador em
-`http://localhost:8701/planta`; ataques em `http://localhost:8701/`.
+`atebeagle.bat` abre o menu: inicia com ataque real ou simulado, verifica a placa, acerta o
+relógio, recupera a placa e abre as três telas. O modo simulado (`scripts/sim_console.py`) usa o
+validador, o agente e o workload reais contra uma placa falsa, nas portas 8710 e 8711. Monitoramento em `http://localhost:8700`; pasteurizador em
+`http://localhost:8701/planta`; ataques em `http://localhost:8701/ataques`.
 
 | Mudança | Arquivo | O que revisar |
 |---|---|---|
@@ -389,6 +390,7 @@ placa e abre as três telas. Monitoramento em `http://localhost:8700`; pasteuriz
 | Tela de ataques | `scripts/attack_console.html` | O personagem muda só por resultado real |
 | Planta simulada | `scripts/plant_console.html` | Estado, leitura e token são reais; a planta e a contagem de garrafas, não. A leitura é a temperatura do SoC |
 | Menu | `atebeagle.bat`, `scripts/launcher.py` | Encerra só processos que confere serem do projeto |
+| Modo simulado | `scripts/sim_console.py` | Resultados de lá não valem como medição: ciclo de 10 s e placa falsa |
 | Mascote no painel | `atebeagle/dashboard.html` | Embutido no HTML, sem rota nova no validador |
 
 - [ ] A correção de boot não está na imagem de `D:\ATEBEAGLE-build`. O menu acusa esse caso.

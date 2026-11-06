@@ -4,9 +4,11 @@ Só biblioteca padrão para o menu. O validador e o console ficam em segundo pla
 depois de fechar o menu; os logs ficam em runs/launcher/.
 
   atebeagle.bat               menu interativo
-  atebeagle.bat --iniciar     sobe tudo e abre as três telas
+  atebeagle.bat --iniciar     sobe tudo, com ataques reais na placa, e abre as três telas
+  atebeagle.bat --simulado    sobe a simulação, sem tocar na placa, e abre as três telas
   atebeagle.bat --verificar   só confere a placa
-  atebeagle.bat --parar       encerra o validador e o console
+  atebeagle.bat --parar       fecha as telas, o validador, o console e a simulação
+  atebeagle.bat --desligar    fecha tudo e desliga a BeagleBone
 """
 from __future__ import annotations
 
@@ -40,8 +42,12 @@ VALIDATOR_PORT = 8700
 CONSOLE_PORT = 8701
 VALIDATOR_URL = f"http://127.0.0.1:{VALIDATOR_PORT}"
 CONSOLE_URL = f"http://127.0.0.1:{CONSOLE_PORT}"
+SIM_VALIDATOR_PORT = 8710
+SIM_CONSOLE_PORT = 8711
+SIM_SCREENS = {"monitor": f"http://127.0.0.1:{SIM_VALIDATOR_PORT}", "planta": f"http://127.0.0.1:{SIM_CONSOLE_PORT}/planta",
+               "ataques": f"http://127.0.0.1:{SIM_CONSOLE_PORT}/ataques"}
 SCREENS = {"monitor": f"http://localhost:{VALIDATOR_PORT}", "planta": f"http://localhost:{CONSOLE_PORT}/planta",
-           "ataques": f"http://localhost:{CONSOLE_PORT}/"}
+           "ataques": f"http://localhost:{CONSOLE_PORT}/ataques"}
 BUILD_CANDIDATES = (r"D:\ATEBEAGLE-build", r"C:\ATEBEAGLE-build", r"C:\atebeagle")
 BROWSERS = (
     Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "Google/Chrome/Application/chrome.exe",
@@ -50,6 +56,9 @@ BROWSERS = (
     Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")) / "Microsoft/Edge/Application/msedge.exe",
 )
 DEPENDENCIES = {"cryptography": "cryptography", "paramiko": "paramiko"}
+# Título exato: janela de aplicativo não tem " - Google Chrome", então uma aba comum nunca é fechada.
+SCREEN_TITLES = ("ATEBEAGLE Validador", "Pasteurizador P-101", "Mesa do invasor ATEBEAGLE")
+POWEROFF = "systemd-run --on-active=2 --quiet systemctl poweroff"
 
 RESET, BOLD = "\033[0m", "\033[1m"
 DIM, FAINT = "\033[38;5;245m", "\033[38;5;240m"
@@ -417,10 +426,34 @@ def open_url(url):
         webbrowser.open(url)
 
 
-def open_screens(*names):
-    for name in names or SCREENS:
-        open_url(SCREENS[name])
+def active_screens():
+    """Telas do modo que está no ar. Com os dois no ar, vale o real."""
+    if port_open("127.0.0.1", VALIDATOR_PORT) and port_open("127.0.0.1", CONSOLE_PORT):
+        return SCREENS
+    if port_open("127.0.0.1", SIM_CONSOLE_PORT):
+        return SIM_SCREENS
+    raise Fail("nenhum modo está no ar", "use Iniciar com ataque real ou Iniciar simulado")
+
+
+def open_screens(*names, screens=None):
+    screens = screens or SCREENS
+    for name in names or screens:
+        open_url(screens[name])
     say("Telas abertas", "ok")
+
+
+def action_start_sim():
+    """Validador e agente reais contra uma placa falsa: não toca na BeagleBone."""
+    try:
+        __import__("cryptography")
+    except ImportError:
+        if not confirm("Falta cryptography. Instalar agora"):
+            raise Fail("falta cryptography", "use a opção Instalar dependências") from None
+        install(["cryptography"])
+    start_service("simulacao", [str(ROOT / "scripts" / "sim_console.py")], ROOT, SIM_CONSOLE_PORT)
+    say("Simulação no ar: nada aqui chega à BeagleBone.", "ok")
+    open_screens(screens=SIM_SCREENS)
+    say("A detecção de anomalias aprende por 8 ciclos (cerca de 80 s). O ciclo é de 10 s.", "dim")
 
 
 def action_start():
@@ -459,43 +492,95 @@ def action_start():
     say("A detecção de anomalias aprende por 20 ciclos (cerca de 20 min) depois que o validador sobe.", "dim")
 
 
-def action_stop():
+def close_windows(titles=SCREEN_TITLES):
+    """Pede o fechamento das janelas com esses títulos exatos e devolve quantas achou."""
+    if os.name != "nt":
+        return 0
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def each(hwnd, _):
+        if user32.IsWindowVisible(hwnd):
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(hwnd, buf, 256)
+            if buf.value in titles:
+                found.append(hwnd)
+        return True
+
+    user32.EnumWindows(each, 0)
+    for hwnd in found:
+        user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+    return len(found)
+
+
+def attack_left_active():
+    """Ataque real ativo deixa restos na placa. Devolve o título, se houver."""
     s = console_status()
     a = s and s.get("attack")
-    if a and a["status"] in ("running", "detected"):
-        say(f"Há um ataque ativo: {a['title']}. Recupere a placa para não deixar restos.", "warn")
-        if not confirm("Encerrar mesmo assim", default=False):
-            return
+    return a["title"] if a and a["status"] in ("running", "detected") else None
+
+
+def stop_everything():
+    closed = close_windows()
+    say(f"{closed} tela(s) fechada(s)" if closed else "Nenhuma tela aberta", "ok" if closed else "dim")
     stop_service("console", CONSOLE_PORT, "attack_console")
     stop_service("validador", VALIDATOR_PORT, "atebeagle.validator")
-    say("A placa continua ligada. Pode desligá-la com segurança pelo botão POWER ou pelo cabo.", "dim")
+    stop_service("simulacao", SIM_CONSOLE_PORT, "sim_console")
+
+
+def action_stop():
+    title = attack_left_active()
+    if title:
+        say(f"Há um ataque ativo: {title}. Recupere a placa para não deixar restos.", "warn")
+        if not confirm("Fechar mesmo assim", default=False):
+            return
+    stop_everything()
+    say("A BeagleBone continua ligada.", "dim")
+
+
+def action_shutdown(ask=True):
+    """Fecha tudo e desliga a placa. O validador para antes: sem isso, o silêncio da placa
+    desligada viraria uma revogação que continuaria valendo no próximo início."""
+    board_up = port_open(BOARD_HOST, 22)
+    title = attack_left_active()
+    if title:
+        say(f"Há um ataque ativo: {title}. Os restos ficam na placa até uma recuperação.", "warn")
+    if ask and not confirm("Fechar tudo e desligar a BeagleBone? Para religar, use o botão POWER ou o cabo",
+                           default=False):
+        say("Nada foi fechado.", "dim")
+        return
+    if not board_up:
+        stop_everything()
+        raise Fail(f"tudo foi fechado, mas a placa não responde em {BOARD_HOST}",
+                   "se ela ainda estiver ligada, segure o botão POWER por alguns segundos")
+    ensure_dependencies()
+    ssh, board_error = board()
+    stop_everything()
+    try:
+        rc, out = ssh.run(POWEROFF, timeout=20)
+    except board_error as e:
+        raise Fail(f"não consegui mandar a placa desligar: {e}",
+                   "segure o botão POWER por alguns segundos") from e
+    if rc:
+        raise Fail(f"a placa recusou o desligamento: {out}", "segure o botão POWER por alguns segundos")
+    say("Desligando a BeagleBone")
+    end = time.time() + 40
+    while time.time() < end and port_open(BOARD_HOST, 22):
+        time.sleep(1)
+    if port_open(BOARD_HOST, 22):
+        raise Fail("a placa ainda responde depois de 40 s", "espere mais um pouco ou segure o botão POWER")
+    say("A BeagleBone saiu da rede. Espere os LEDs apagarem antes de tirar o cabo.", "ok")
 
 
 def action_screen(name):
-    if not port_open("127.0.0.1", VALIDATOR_PORT if name == "monitor" else CONSOLE_PORT):
-        raise Fail("essa tela depende de um serviço parado", "use Iniciar tudo primeiro")
-    open_screens(name)
+    open_screens(name, screens=active_screens())
 
 
 def action_all_screens():
-    if not port_open("127.0.0.1", VALIDATOR_PORT) or not port_open("127.0.0.1", CONSOLE_PORT):
-        raise Fail("o validador ou o console está parado", "use Iniciar tudo primeiro")
-    open_screens()
-
-
-def action_rehearsal():
-    if port_open("127.0.0.1", VALIDATOR_PORT):
-        raise Fail("o validador real está no ar na porta 8700", "use Encerrar o sistema antes do ensaio")
-    ensure_dependencies()
-    flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-    subprocess.Popen([sys.executable, str(ROOT / "scripts" / "sim_demo.py"), "--interval", "5"], cwd=ROOT,
-                     creationflags=flags)
-    say("Ensaio aberto em outra janela: digite os comandos nela (quit para sair).", "ok")
-    end = time.time() + 15
-    while time.time() < end and not port_open("127.0.0.1", VALIDATOR_PORT):
-        time.sleep(.3)
-    if port_open("127.0.0.1", VALIDATOR_PORT):
-        open_url(SCREENS["monitor"])
+    open_screens(screens=active_screens())
 
 
 def action_tests():
@@ -511,7 +596,7 @@ def action_install():
 
 
 def action_logs():
-    for name in ("validador", "console"):
+    for name in ("validador", "console", "simulacao"):
         path = RUNS / f"{name}.log"
         say(f"--- {path}", "info")
         if path.is_file():
@@ -537,7 +622,7 @@ class Status:
             return [(k, t, tone) for k, (t, tone) in self.rows.items()]
 
 
-def describe(board_up, dev, con):
+def describe(board_up, dev, con, sim_up=False):
     """Painel de status como (nome, texto, tom). Função pura, para poder testar."""
     rows = [("Placa", f"respondendo em {BOARD_HOST}", "ok") if board_up
             else ("Placa", "sem resposta: confira o cabo mini-USB de dados", "bad")]
@@ -557,6 +642,7 @@ def describe(board_up, dev, con):
         active = attack and attack["status"] in ("running", "detected")
         rows.append(("Console", f"ataque ativo: {attack['title']}" if active else "no ar, nenhum ataque ativo",
                      "warn" if active else "ok"))
+    rows.append(("Simulação", "no ar, sem tocar na placa" if sim_up else "parada", "info" if sim_up else "dim"))
     return rows
 
 
@@ -626,16 +712,17 @@ def read_key():
 
 
 ITEMS = [
-    ("1", "Iniciar tudo", "confere a placa, sobe os serviços e abre as três telas", "info", action_start),
-    ("2", "Verificar a placa", "rede, SSH, relógio, serviços, chave, baseline e restos", "", action_check),
-    ("3", "Abrir as três telas", "monitoramento, pasteurizador e ataques", "", action_all_screens),
-    ("4", "Abrir o Pasteurizador", "só a planta", "", lambda: action_screen("planta")),
-    ("5", "Abrir os Ataques", "só a mesa do invasor", "", lambda: action_screen("ataques")),
-    ("6", "Abrir o Monitoramento", "só o painel do validador", "", lambda: action_screen("monitor")),
-    ("7", "Acertar o relógio", "a placa não tem bateria e perde a hora", "", action_clock),
-    ("8", "Recuperar a placa", "desfaz ataques e re-provisiona", "warn", action_recover),
-    ("9", "Encerrar o sistema", "para o validador e o console", "", action_stop),
-    ("e", "Ensaio sem placa", "demo simulada, plano B da apresentação", "", action_rehearsal),
+    ("1", "Iniciar com ataque real", "ataques de verdade na BeagleBone; confere a placa e abre as telas", "warn", action_start),
+    ("2", "Iniciar simulado", "para brincar: placa falsa, nada chega à BeagleBone", "info", action_start_sim),
+    ("3", "Verificar a placa", "rede, SSH, relógio, serviços, chave, baseline e restos", "", action_check),
+    ("4", "Abrir as três telas", "do modo que estiver no ar", "", action_all_screens),
+    ("5", "Abrir o Pasteurizador", "só a planta", "", lambda: action_screen("planta")),
+    ("6", "Abrir os Ataques", "só a mesa do invasor", "", lambda: action_screen("ataques")),
+    ("7", "Abrir o Monitoramento", "só o painel do validador", "", lambda: action_screen("monitor")),
+    ("8", "Acertar o relógio", "a placa não tem bateria e perde a hora", "", action_clock),
+    ("9", "Recuperar a placa", "desfaz ataques reais e re-provisiona", "warn", action_recover),
+    ("0", "Fechar tudo", "telas, validador, console e simulação; a placa fica ligada", "", action_stop),
+    ("x", "Fechar tudo e desligar a BBB", "desliga a placa; para religar, botão POWER ou cabo", "warn", action_shutdown),
     ("t", "Rodar os testes", "testes automatizados, não tocam a placa", "", action_tests),
     ("d", "Instalar dependências", "cryptography, paramiko e pytest", "", action_install),
     ("l", "Ver os logs", "últimas linhas do validador e do console", "", action_logs),
@@ -654,7 +741,7 @@ def run_action(fn):
 
 def watch_status(status, stop):
     while not stop.is_set():
-        for name, text, tone in describe(port_open(BOARD_HOST, 22), device(), console_status()):
+        for name, text, tone in describe(port_open(BOARD_HOST, 22), device(), console_status(), port_open("127.0.0.1", SIM_CONSOLE_PORT)):
             status.set(name, text, tone)
         stop.wait(2.5)
 
@@ -720,11 +807,14 @@ def main(argv=None):
         os.system("")  # liga as sequências ANSI no console do Windows
     ap = argparse.ArgumentParser(description="Menu do ATEBEAGLE")
     group = ap.add_mutually_exclusive_group()
-    for flag, help_text in (("--iniciar", "sobe tudo e abre as telas"), ("--verificar", "só confere a placa"),
-                            ("--parar", "encerra o validador e o console")):
+    for flag, help_text in (("--iniciar", "sobe tudo, com ataques reais, e abre as telas"),
+                            ("--simulado", "sobe a simulação e abre as telas"), ("--verificar", "só confere a placa"),
+                            ("--parar", "fecha as telas, o validador, o console e a simulação"),
+                            ("--desligar", "fecha tudo e desliga a BeagleBone")):
         group.add_argument(flag, action="store_true", help=help_text)
     a = ap.parse_args(argv)
-    direct = action_start if a.iniciar else action_check if a.verificar else action_stop if a.parar else None
+    direct = (action_start if a.iniciar else action_start_sim if a.simulado else action_check if a.verificar
+              else action_stop if a.parar else (lambda: action_shutdown(ask=False)) if a.desligar else None)
     if direct:
         try:
             direct()

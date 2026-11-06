@@ -14,19 +14,27 @@ dispositivo e corta o I/O do workload.
 
 ## Demonstração na placa
 
-No Windows, dê dois cliques em `atebeagle.bat` e escolha **Iniciar tudo**. O menu confere a
-placa, acerta o relógio, sobe o validador e o console e abre as três telas:
+No Windows, dê dois cliques em `atebeagle.bat` e escolha o modo:
+
+- **Iniciar com ataque real:** confere a placa, acerta o relógio, sobe o validador e o console
+  e abre as três telas. Os ataques agem na BeagleBone.
+- **Iniciar simulado:** para ensaiar ou brincar sem a placa. O validador, o agente e o workload
+  são os reais, mas a placa é falsa e o ciclo é de 10 s. Usa as portas 8710 e 8711, e cada tela
+  avisa que é simulação.
+
+Com ataque real, as telas ficam em:
 
 | Tela | Endereço |
 |---|---|
 | Monitoramento | http://localhost:8700 |
 | Pasteurizador | http://localhost:8701/planta |
-| Ataques | http://localhost:8701/ |
+| Ataques | http://localhost:8701/ataques |
 
 Ele instala o que faltar (`cryptography`, `paramiko`) e procura o `validator.json` em
 `D:\ATEBEAGLE-build`, `C:\ATEBEAGLE-build` e `C:\atebeagle`, ou em `ATEBEAGLE_BUILD`. Fechar o
-menu não para o sistema; para isso existe a opção **Encerrar o sistema**. Suba cerca de 20 min
-antes de apresentar: a detecção de anomalias aprende nesse tempo.
+menu não para o sistema: para isso existem **Fechar tudo** e **Fechar tudo e desligar a BBB**,
+que desliga a placa. Suba cerca de 20 min antes de apresentar: a detecção de anomalias aprende
+nesse tempo.
 
 Os ataques da tela são reais e reversíveis. **Recuperar a placa** desfaz qualquer um deles.
 A planta é simulada; o estado, a leitura e a autorização vêm da placa e do validador.
@@ -55,13 +63,14 @@ scripts/
   attacks.sh          ataques controlados para a demo
   sim_demo.py         demo completa sem placa (ensaio e plano B)
   launcher.py         menu do atebeagle.bat
+  sim_console.py      modo simulado do console (placa falsa, sem paramiko)
   attack_console.py   console de ataque, roda no PC (exige paramiko)
   attack_console.html tela de ataques
   plant_console.html  tela do pasteurizador
   gen_drawio.py       gera docs/arquitetura.drawio
 systemd/              units do agente e do workload
 docs/                 revisão, arquitetura, requisitos da ENT#8, matriz, plano de bancada
-tests/                48 testes (ponta a ponta, plataforma, console e menu)
+tests/                67 testes (ponta a ponta, plataforma, console e menu)
 atebeagle.bat         menu para iniciar e verificar tudo
 ```
 

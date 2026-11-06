@@ -191,7 +191,7 @@ def get(port, path):
 
 
 def test_as_duas_telas_do_console_abrem(con, http_port):
-    for path, marca in (("/", "Mesa do invasor"), ("/planta", "Pasteurizador")):
+    for path, marca in (("/ataques", "Mesa do invasor"), ("/", "Mesa do invasor"), ("/planta", "Pasteurizador")):
         code, ctype, body = get(http_port, path)
         assert code == 200 and "text/html" in ctype and marca in body.decode()
 

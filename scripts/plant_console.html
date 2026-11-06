@@ -122,12 +122,12 @@
 <header>
   <div class="name">
     <h1>Pasteurizador P-101</h1>
-    <p>Linha de leite comandada pela BeagleBone bbb-01</p>
+    <p id="subtitle">Linha de leite comandada pela BeagleBone bbb-01</p>
   </div>
   <nav aria-label="Telas">
     <a id="nav-monitor" href="#" target="_blank" rel="noopener">Monitoramento</a>
     <a href="/planta" aria-current="page">Pasteurizador</a>
-    <a href="/" target="_blank" rel="noopener">Ataques</a>
+    <a href="/ataques" target="_blank" rel="noopener">Ataques</a>
   </nav>
   <div class="status" role="status" aria-live="polite">
     <strong id="line">Conectando</strong>
@@ -328,7 +328,7 @@
   <div><small>Garrafas nesta tela</small><b id="count">0</b><small>Contagem simulada</small></div>
   <div><small>Últimos eventos do validador</small><ul id="events"></ul></div>
 </section>
-<footer>Planta simulada para a demonstração. Estado, leitura do sensor, autorização e eventos vêm da placa real e do validador. A leitura é a temperatura do processador da placa.</footer>
+<footer id="footnote">Planta simulada para a demonstração. Estado, leitura do sensor, autorização e eventos vêm da placa real e do validador. A leitura é a temperatura do processador da placa.</footer>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -363,6 +363,10 @@ function render(s) {
   $("line").textContent = title;
   $("line-why").textContent = why;
   if (s.monitor_url) $("nav-monitor").href = s.monitor_url;
+  if (s.simulated) {
+    $("subtitle").textContent = "Modo simulado: nada aqui vem da BeagleBone";
+    $("footnote").textContent = "Modo simulado. O validador e o agente são os reais, mas a placa é falsa, o ciclo é de 10 s e a leitura do sensor é sintética.";
+  }
   setBelt(cls === "run" || cls === "alert");
 
   const v = s.validator, d = v && v.devices[0];
