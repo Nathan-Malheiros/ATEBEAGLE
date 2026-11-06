@@ -295,3 +295,27 @@ ataque cai.
   cópia na placa mantém o bug até a próxima baseline: mova `/root/workload.py` à mão.
 - [ ] Notebook em modo de espera interrompe o validador. Desative a suspensão na demo.
 - `check_board.sh` confirmou: kernel sem IMA (`CONFIG_IMA` desligado), então o coletor é `fs`.
+
+### 10.2 Continuar no desktop
+
+Os testes acima foram feitos no notebook. `D:\ATEBEAGLE-build` (imagem original) fica no
+desktop, e as chaves e o `validator.json` devem estar junto. O microSD já traz a correção
+de boot: **não regrave com a imagem original**, que volta a ter o falso positivo.
+
+O backup do microSD corrigido está no notebook, em `C:\atebeagle\backups`. Ele contém
+`device.key`: copie só por pendrive, nunca por nuvem ou Git.
+
+1. Baixe esta branch: `git fetch origin`, depois `git switch bancada-placa-real`.
+2. Ligue a placa com um **cabo mini-USB de dados**. Dos três testados, um dava erro de
+   descritor e outro não aparecia no PC. Espere pouco mais de 2 minutos.
+3. Acerte o relógio pelo Git Bash:
+   `ssh -t debian@192.168.7.2 "sudo date -u -s '$(date -u '+%Y-%m-%d %H:%M:%S')'"`
+4. Confira o `validator.json`: a chave pública deve ser a da `device.key` da placa, e o
+   `admin_token` não pode ser o padrão. Um `validator_state.json` antigo pode trazer REVOKED
+   ou uma época maior que a da placa; nesse caso, comece com um arquivo de estado novo.
+5. Suba o validador: `py -m atebeagle.validator --config <caminho>\validator.json`. Se a
+   placa não alcançar a porta 8700, libere-a no firewall só para a rede da placa.
+6. Espere `TRUSTED` em `http://localhost:8700` e repita a tabela 10.1, além do reboot com
+   validador ativo.
+7. Depois de `delete`, a cópia do `attacks.sh` na placa não restaura sozinha:
+   `sudo mv /root/workload.py /opt/atebeagle/`.
