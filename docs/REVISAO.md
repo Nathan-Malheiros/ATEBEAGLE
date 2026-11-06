@@ -5,7 +5,7 @@ comprovado e o que ainda precisa ser revisado por uma pessoa antes da entrega da
 ENT#8. Nada aqui substitui a leitura do código: confira cada item e marque a caixa
 somente depois de verificar.
 
-Revisado até 05/11/2026.
+Revisado até 06/11/2026.
 
 ## 1. Atenção antes de tudo
 
@@ -13,10 +13,11 @@ Estes pontos podem atrapalhar a bancada ou a apresentação. Leia primeiro.
 
 - [ ] **Teste na placa física ainda parcial** (ver seção 10). Boot pelo microSD, carga do
   `atebeagle_kint`, rede USB, serviços systemd e ciclos PASS do agente já rodaram na
-  BeagleBone real. Faltam o validador na placa real, os ataques e a detecção de
-  alteração na sys_call_table.
-- [x] **Os 22 testes passam no Python 3.7 da imagem** (Linux, ARM emulado via qemu), além
-  do Windows com Python 3.14.
+  BeagleBone real, e em 06/11 também o validador com a configuração original e os ataques
+  (seção 10.3). Falta a detecção de alteração na sys_call_table.
+- [x] **Os 22 testes do núcleo passam no Python 3.7 da imagem** (Linux, ARM emulado via
+  qemu). No Windows com Python 3.14 passam os 48, incluindo o console e o menu, que rodam
+  só no PC e não foram testados no Python 3.7.
 - [ ] **A ordem de instalação do plano está errada.** `scripts/setup_board.sh` encerra
   com erro se `/etc/atebeagle/device.key` não existir, mas o plano e o README só enviam
   a chave depois dele. Veja a seção 4.
@@ -32,7 +33,10 @@ Estes pontos podem atrapalhar a bancada ou a apresentação. Leia primeiro.
 
 | Item | Situação | Como foi verificado |
 |---|---|---|
-| Testes automatizados | Comprovado no Windows e no Python 3.7 (ARM emulado) | 22 testes passando nos dois |
+| Testes automatizados | Núcleo no Windows e no Python 3.7 (ARM emulado); console e menu só no Windows | 22 nos dois; 48 no Windows |
+| Ataques na placa real, com a configuração original | Comprovado em 06/11, exceto a sys_call_table | Console na placa real, seção 10.3 |
+| Replay e veredito forjado na placa real | Comprovado em 06/11 | Veredito capturado em `usb0` e reenviado; eventos REPLAY e REJECT |
+| Reboot com validador ativo | Medido uma vez, no caso mais favorável | Seção 10.3 |
 | `tamper`, `drop`, `delete`, `module`, `chain` revogam | Comprovado em simulação | Roteiro consultando `/api/state` |
 | `silence` revoga em cerca de 12 s (intervalo de 5 s) | Comprovado em simulação | Roteiro e captura de tela |
 | `replay` e `forge` são recusados sem revogar | Comprovado em simulação | Roteiro e lista de eventos |
@@ -48,7 +52,7 @@ Estes pontos podem atrapalhar a bancada ou a apresentação. Leia primeiro.
 | Módulo `atebeagle_kint` | **Compila** (vermagic 4.19.94-ti-r42); não carregado na placa | Compilado com os headers do kernel na imagem |
 | `provision.sh baseline` e `push` | **Não testados** | Só `keys` foi testado, com chaves descartáveis |
 | `attacks.sh`: tamper/drop/delete | Comprovado na imagem ARM emulada | FAIL com ALTERED/UNAUTHORIZED/MISSING; restaura para PASS |
-| `attacks.sh`: module/silence/netcut; `check_board.sh` | **Não testados** | Precisam da placa (kernel/hardware reais) |
+| `attacks.sh`: module/silence/netcut; `check_board.sh` | Comprovados na placa real | Seções 10.1 e 10.3 |
 
 ## 3. O que mudou e o que revisar
 
@@ -319,3 +323,77 @@ O backup do microSD corrigido está no notebook, em `C:\atebeagle\backups`. Ele 
    validador ativo.
 7. Depois de `delete`, a cópia do `attacks.sh` na placa não restaura sozinha:
    `sudo mv /root/workload.py /opt/atebeagle/`.
+
+### 10.3 Bancada no desktop (06/11/2026, intervalo de 60 s)
+
+Validador no desktop com o `validator.json` original; chave e baseline conferem com a placa
+por hash. Placa alimentada pelo USB do desktop. Sequência em segundo plano e depois repetida
+pelo console de ataque (`scripts/attack_console.py`), cujos ataques são inofensivos e diferentes
+do `attacks.sh`: o trojan é um comentário e o backdoor se chama `atb-backdoor`.
+
+| Teste | `attacks.sh` | Console | Observação |
+|---|---|---|---|
+| 20 min sem ataques | Sem eventos | | Aquecimento da detecção de anomalias |
+| Carga de CPU / minerador | SUSPECT em 44 s | SUSPECT em 59 s | `cycle_ms` (z=18,8); sem revogar; volta a TRUSTED |
+| `tamper` / trojan | REVOKED em 58 s | 58 s | L2 ALTERED; USR3 aceso, workload parado |
+| `drop` / backdoor | REVOKED em 53 s | 59 s | L2 UNAUTHORIZED |
+| `delete` / apagar programa | REVOKED em 51 s | 59 s | L2 MISSING |
+| `module` / rootkit | REVOKED em 52 s | 57 s | L3 MODULE_NEW `dummy` |
+| `silence` (SIGKILL) | Não revogou em 210 s | Não revogou em 200 s | SUSPECT passageiro por `arrival_jitter_s` (z=52) |
+| `systemctl stop` do agente | REVOKED em 125 s | 106 s | Dead man's switch; USR3 apagado, workload ativo |
+| `netcut` | REVOKED em 142 s (200 s fora) | 150 s e 126 s (130 s fora) | Sem reinício espontâneo neste PC |
+| Replay | **Inválido** | 403, evento REPLAY | Veredito real capturado em `usb0` |
+| Veredito forjado | **Inválido** | 403, evento REJECT | Sem revogar |
+| Leitura falsa sem token | | 403 | |
+| Leitura falsa com token roubado | | **Aceita** (200) em TRUSTED; 403 depois da revogação | Token ao portador |
+| Implante em `/usr/bin` | | **Sem reação** em 135 s | Fora dos caminhos do coletor `fs` |
+| Backdoor de 9 s, entre duas medições | | **Sem reação** | Limite de medição periódica |
+| Reboot com validador ativo | Sem revogar; 1º veredito em 137 s | | Caso mais favorável; SUSPECT passageiro, `arrival_jitter_s` (z=83) |
+
+Os tempos dependem do ponto do ciclo em que o ataque cai. Replay e forja da coluna
+`attacks.sh` são inválidos por erro do roteiro de teste: a captura usava um socket só de IP,
+que não vê os pacotes que a própria placa envia, então nenhum veredito real foi reenviado.
+A coluna do console usa a captura corrigida.
+
+- [ ] **Reboot deve revogar na maioria dos casos.** Foram 137 s de silêncio começando logo
+  depois de um veredito, contra um limite de 150 s. Em outro ponto do ciclo, o total
+  passa do limite. Conclusão por cálculo; repita o teste em vários pontos do ciclo e decida
+  entre aceitar a revogação ou ajustar a espera.
+- [ ] **SUSPECT falso depois de reinício.** A pausa nos vereditos conta como atraso de chegada.
+  Avaliar se `arrival_jitter_s` deve ser ignorado no ciclo frio, como `cycle_ms`.
+- [ ] **Token ao portador.** Com o token copiado da placa, leituras falsas são aceitas enquanto
+  o dispositivo está TRUSTED. Decidir se isso entra como limitação ou se o token deve ser
+  vinculado a uma assinatura da placa.
+- [ ] **Cobertura e janela.** O coletor `fs` só mede `/opt/atebeagle` e `/usr/local/bin`, e
+  alterações desfeitas entre dois ciclos não são vistas. Descrever os dois limites na
+  apresentação.
+- [ ] O reinício espontâneo do notebook não se repetiu com o desktop, o que sugere alimentação
+  pelo USB, mas foi uma única repetição. Não trate como causa confirmada.
+- [ ] O journal da placa continua não persistente: um novo reinício espontâneo não deixará
+  registro do boot anterior.
+- [ ] **Sem `scikit-learn`, o modelo em uso é o z-score robusto**, estatística e não aprendizado
+  de máquina, e mesmo com ele o Isolation Forest só conta a partir de 50 vereditos. Os textos
+  que dizem "IA" precisam refletir o que estiver rodando.
+- [ ] A detecção de anomalias perde o histórico quando o validador reinicia. Suba o sistema
+  cerca de 20 min antes da demonstração para o minerador gerar SUSPECT.
+
+### 10.4 Console de ataque, planta e menu
+
+`atebeagle.bat` abre o menu: inicia o sistema, verifica a placa, acerta o relógio, recupera a
+placa e abre as três telas. Monitoramento em `http://localhost:8700`; pasteurizador em
+`http://localhost:8701/planta`; ataques em `http://localhost:8701/`.
+
+| Mudança | Arquivo | O que revisar |
+|---|---|---|
+| Console com 13 ataques reversíveis | `scripts/attack_console.py` | Ações são de root na placa: só escuta em 127.0.0.1 e recusa outras origens |
+| Tela de ataques | `scripts/attack_console.html` | O personagem muda só por resultado real |
+| Planta simulada | `scripts/plant_console.html` | Estado, leitura e token são reais; a planta e a contagem de garrafas, não. A leitura é a temperatura do SoC |
+| Menu | `atebeagle.bat`, `scripts/launcher.py` | Encerra só processos que confere serem do projeto |
+| Mascote no painel | `atebeagle/dashboard.html` | Embutido no HTML, sem rota nova no validador |
+
+- [ ] A correção de boot não está na imagem de `D:\ATEBEAGLE-build`. O menu acusa esse caso.
+- [ ] O console usa a senha padrão `temppwd`. Ao trocá-la, defina `ATEBEAGLE_BOARD_PASSWORD`.
+- [ ] `dashboard.html` também fica em `/opt/atebeagle/src` na placa. Sincronizar exige nova
+  baseline assinada.
+- [ ] Ilustrações em `docs/assets`; as versões `_limpa` não têm a escrita. O mascote e o nome
+  são da BeagleBoard: confira as regras de uso da marca antes de publicar a apresentação.

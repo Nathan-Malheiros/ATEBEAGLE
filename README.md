@@ -8,9 +8,28 @@ compara com uma baseline assinada, assina o veredito e o envia a um validador
 externo. Qualquer falha, silêncio, replay ou quebra de cadeia revoga a chave do
 dispositivo e corta o I/O do workload.
 
-> **Em revisão.** Testado apenas em simulação, ainda não na placa. Antes de usar ou
+> **Em revisão.** Ataques medidos na placa real, com limites conhecidos. Antes de usar ou
 > avaliar, leia [docs/REVISAO.md](docs/REVISAO.md): o que foi comprovado, o que não foi e
 > os pontos de atenção.
+
+## Demonstração na placa
+
+No Windows, dê dois cliques em `atebeagle.bat` e escolha **Iniciar tudo**. O menu confere a
+placa, acerta o relógio, sobe o validador e o console e abre as três telas:
+
+| Tela | Endereço |
+|---|---|
+| Monitoramento | http://localhost:8700 |
+| Pasteurizador | http://localhost:8701/planta |
+| Ataques | http://localhost:8701/ |
+
+Ele instala o que faltar (`cryptography`, `paramiko`) e procura o `validator.json` em
+`D:\ATEBEAGLE-build`, `C:\ATEBEAGLE-build` e `C:\atebeagle`, ou em `ATEBEAGLE_BUILD`. Fechar o
+menu não para o sistema; para isso existe a opção **Encerrar o sistema**. Suba cerca de 20 min
+antes de apresentar: a detecção de anomalias aprende nesse tempo.
+
+Os ataques da tela são reais e reversíveis. **Recuperar a placa** desfaz qualquer um deles.
+A planta é simulada; o estado, a leitura e a autorização vêm da placa e do validador.
 
 ## Estrutura
 
@@ -35,10 +54,15 @@ scripts/
   setup_board.sh      instala o agente na placa
   attacks.sh          ataques controlados para a demo
   sim_demo.py         demo completa sem placa (ensaio e plano B)
+  launcher.py         menu do atebeagle.bat
+  attack_console.py   console de ataque, roda no PC (exige paramiko)
+  attack_console.html tela de ataques
+  plant_console.html  tela do pasteurizador
   gen_drawio.py       gera docs/arquitetura.drawio
 systemd/              units do agente e do workload
 docs/                 revisão, arquitetura, requisitos da ENT#8, matriz, plano de bancada
-tests/                22 testes (ponta a ponta e regressões de plataforma)
+tests/                48 testes (ponta a ponta, plataforma, console e menu)
+atebeagle.bat         menu para iniciar e verificar tudo
 ```
 
 ## Rodar agora, sem a placa
@@ -52,7 +76,7 @@ python3 scripts/sim_demo.py --interval 5       # abra http://localhost:8700
 No Windows, em um terminal aberto na pasta do projeto:
 
 ```powershell
-py -m pip install cryptography pytest scikit-learn
+py -m pip install cryptography paramiko pytest scikit-learn
 py -m pytest -q
 py scripts\sim_demo.py --interval 5
 ```
