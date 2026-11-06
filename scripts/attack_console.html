@@ -33,7 +33,10 @@
   a { color: inherit; }
 
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 24px; padding: 16px 0 14px; }
-  h1 { margin: 0 auto 0 0; font: 700 40px/1 var(--narrow); }
+  h1 { margin: 0; font: 700 40px/1 var(--narrow); }
+  #mode { margin-right: auto; }
+  #mode { font-weight: 700; color: var(--hot); }
+  [data-simulated] #mode { color: var(--amber); }
   nav { display: flex; gap: 16px; font-size: 15px; }
   nav a { color: var(--muted); text-underline-offset: 4px; }
   nav a[aria-current] { color: var(--ink); text-decoration-thickness: 2px; }
@@ -172,10 +175,11 @@
 <div class="wrap">
   <header>
     <h1>Mesa do invasor</h1>
+    <span id="mode"></span>
     <nav aria-label="Telas">
       <a id="nav-monitor" href="#" target="_blank" rel="noopener">Monitoramento</a>
       <a href="/planta" target="_blank" rel="noopener">Pasteurizador</a>
-      <a href="/" aria-current="page">Ataques</a>
+      <a href="/ataques" aria-current="page">Ataques</a>
     </nav>
     <div id="target" role="status" aria-live="polite"><small>Alvo bbb-01</small><strong id="target-state">Sem sinal</strong></div>
   </header>
@@ -384,6 +388,8 @@ function setRing(id, circumference, frac) {
 function renderClock(s) {
   const v = s.validator, d = v && v.devices[0], a = s.attack;
   document.documentElement.dataset.target = d ? d.state : "UNKNOWN";
+  document.documentElement.toggleAttribute("data-simulated", !!s.simulated);
+  $("mode").textContent = s.simulated ? "Modo simulado: nada chega à placa" : "Ataques reais na placa";
   $("target-state").textContent = d ? d.state : "Sem sinal";
   if (s.monitor_url) $("nav-monitor").href = s.monitor_url;
 
@@ -430,6 +436,7 @@ function renderAttack(s) {
   if (!a) {
     $("now-title").textContent = busy === "recover" ? "Recuperando a placa" : "Nenhum ataque ativo";
     result.textContent = busy === "recover" ? "Restaurando tudo e esperando um veredito aprovado. Pode levar alguns minutos."
+      : s.simulated ? "Escolha um ataque. Ele roda na placa simulada: pode brincar à vontade."
       : "Escolha um ataque. Ele roda de verdade na placa e pode ser desfeito.";
     return;
   }

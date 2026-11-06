@@ -62,6 +62,7 @@ def test_acha_a_pasta_com_os_dados(tmp_path, monkeypatch):
 
 def test_status_descreve_cada_situacao():
     assert launcher.describe(False, None, None)[0][2] == "bad"
+    assert launcher.describe(False, None, None, True)[-1][:2] == ("Simulação", "no ar, sem tocar na placa")
     dev = {"state": "REVOKED", "last_epoch": 9, "reason": "L2 ALTERED x", "anomaly": {"ready": False}}
     con = {"attack": {"status": "detected", "title": "Trojan"}}
     rows = {name: (text, tone) for name, text, tone in launcher.describe(True, dev, con)}
@@ -75,7 +76,102 @@ def test_menu_desenha_sem_console_e_marca_a_selecao():
     text = launcher.render(items, 1, [("Placa", "ok", "ok")], 100)
     assert "ATEBEAGLE" in text and "Pasteurizador" in text and "►" in text
     selected = [line for line in text.splitlines() if "►" in line][0]
-    assert "Verificar a placa" in selected
+    assert "Iniciar simulado" in selected
+
+
+def test_cada_tela_tem_identidade_propria_no_chrome():
+    # O Chrome ignora a porta ao identificar uma janela de aplicativo.
+    from urllib.parse import urlsplit
+    urls = [*launcher.SCREENS.values(), *launcher.SIM_SCREENS.values()]
+    ids = [(urlsplit(u).hostname, urlsplit(u).path) for u in urls]
+    assert len(ids) == len(set(ids))
+
+
+def test_menu_separa_ataque_real_de_simulado():
+    by_key = {it[0]: it for it in launcher.ITEMS}
+    assert by_key["1"][4] is launcher.action_start and "real" in by_key["1"][1]
+    assert by_key["2"][4] is launcher.action_start_sim and "simulado" in by_key["2"][1]
+
+
+def test_simulacao_nao_mexe_na_placa_e_usa_outras_portas(monkeypatch):
+    def forbidden(*_, **__):
+        raise AssertionError("a simulação não pode falar com a placa")
+    started = []
+    monkeypatch.setattr(launcher, "board", forbidden)
+    monkeypatch.setattr(launcher, "start_service", lambda *a: started.append(a))
+    monkeypatch.setattr(launcher, "open_url", lambda url: started.append(url))
+    launcher.action_start_sim()
+    assert started[0][3] == launcher.SIM_CONSOLE_PORT
+    assert started[1:] == list(launcher.SIM_SCREENS.values())
+    assert launcher.SIM_CONSOLE_PORT not in (launcher.VALIDATOR_PORT, launcher.CONSOLE_PORT)
+
+
+def test_titulos_procurados_sao_os_das_telas():
+    root = launcher.ROOT
+    pages = (root / "atebeagle/dashboard.html", root / "scripts/plant_console.html", root / "scripts/attack_console.html")
+    for title, page in zip(launcher.SCREEN_TITLES, pages):
+        assert f"<title>{title}</title>" in page.read_text(encoding="utf-8")
+
+
+class FakeSsh:
+    def __init__(self, order):
+        self.order = order
+
+    def run(self, script, timeout=120):
+        self.order.append(script)
+        return 0, ""
+
+
+def shutdown_env(monkeypatch, order, board_up=True, answer=True):
+    state = {"up": board_up}
+
+    def up(host, port, timeout=.6):
+        return state["up"] if host == launcher.BOARD_HOST else False
+
+    class Ssh(FakeSsh):
+        def run(self, script, timeout=120):
+            state["up"] = False
+            return super().run(script, timeout)
+
+    monkeypatch.setattr(launcher, "port_open", up)
+    monkeypatch.setattr(launcher, "console_status", lambda: None)
+    monkeypatch.setattr(launcher, "missing_dependencies", lambda: [])
+    monkeypatch.setattr(launcher, "board", lambda: (Ssh(order), RuntimeError))
+    monkeypatch.setattr(launcher, "stop_everything", lambda: order.append("fechou"))
+    monkeypatch.setattr(launcher, "confirm", lambda *_a, **_k: answer)
+
+
+def test_desligar_para_o_validador_antes_da_placa(monkeypatch):
+    order = []
+    shutdown_env(monkeypatch, order)
+    launcher.action_shutdown()
+    assert order == ["fechou", launcher.POWEROFF]
+
+
+def test_desligar_pede_confirmacao_e_recusar_nao_fecha_nada(monkeypatch):
+    order = []
+    shutdown_env(monkeypatch, order, answer=False)
+    launcher.action_shutdown()
+    assert order == []
+
+
+def test_desligar_pela_linha_de_comando_nao_pergunta(monkeypatch):
+    order = []
+    shutdown_env(monkeypatch, order, answer=False)
+    launcher.action_shutdown(ask=False)
+    assert order == ["fechou", launcher.POWEROFF]
+
+
+def test_placa_sem_resposta_fecha_o_pc_e_avisa(monkeypatch):
+    order = []
+    shutdown_env(monkeypatch, order, board_up=False)
+    try:
+        launcher.action_shutdown()
+    except launcher.Fail as f:
+        assert "não responde" in f.what and "POWER" in f.todo
+    else:
+        raise AssertionError("deveria avisar que a placa não respondeu")
+    assert order == ["fechou"]
 
 
 def test_atalhos_do_menu_nao_se_repetem():

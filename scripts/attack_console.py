@@ -25,7 +25,9 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PAGES = {"/": "attack_console.html", "/index.html": "attack_console.html", "/planta": "plant_console.html"}
+# Caminhos próprios: o Chrome ignora a porta ao identificar uma janela de aplicativo, e "/" aqui
+# seria o mesmo aplicativo que o painel do validador.
+PAGES = {"/": "attack_console.html", "/ataques": "attack_console.html", "/planta": "plant_console.html"}
 DOGS = {"calm": "BBBDogAtack_limpa.jpg", "hack": "BBBDogHacker_limpa.jpg", "caught": "BBBDogAtackConfuse_limpa.jpg"}
 ASSETS = os.path.join(os.path.dirname(HERE), "docs", "assets")
 DEVICE = "bbb-01"
@@ -226,11 +228,12 @@ class Validator:
 
 
 class Console:
-    def __init__(self, board, validator, recover_timeout=300, monitor_url=None):
+    def __init__(self, board, validator, recover_timeout=300, monitor_url=None, simulated=False):
         self.board = board
         self.validator = validator
         self.recover_timeout = recover_timeout
         self.monitor_url = monitor_url
+        self.simulated = simulated
         self.lock = threading.RLock()
         self.current = None
         self.busy = None  # "attack", "cancel" ou "recover": bloqueia ações concorrentes
@@ -498,7 +501,7 @@ class Console:
         with self.lock:
             return {"now": time.time(), "validator": self.snap, "attack": self.current, "busy": self.busy,
                     "history": self.history[:12], "log": self.log_lines[-120:],
-                    "monitor_url": self.monitor_url, "fake_temp": FAKE_TEMP,
+                    "monitor_url": self.monitor_url, "fake_temp": FAKE_TEMP, "simulated": self.simulated,
                     "catalog": [dict({k: a[k] for k in CATALOG_KEYS}, net=bool(a.get("net"))) for a in ATTACKS]}
 
 
@@ -581,7 +584,7 @@ def main():
     console = Console(SshBoard(a.board, password), validator, monitor_url=f"http://localhost:{vport}")
     console.start()
     server = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(console, a.port))
-    urls = [f"http://localhost:{vport}", f"http://localhost:{a.port}/planta", f"http://localhost:{a.port}/"]
+    urls = [f"http://localhost:{vport}", f"http://localhost:{a.port}/planta", f"http://localhost:{a.port}/ataques"]
     print("monitoramento, pasteurizador e ataques:", *urls, sep="\n  ", flush=True)
     if a.abrir:
         for url in urls:
