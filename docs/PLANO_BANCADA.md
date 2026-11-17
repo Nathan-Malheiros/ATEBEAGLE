@@ -7,19 +7,14 @@ pronto e testado (22 testes, demo simulada).
 **Atenção:** leia antes a seção 4 de [REVISAO.md](REVISAO.md). A ordem do passo 4 tem um
 problema conhecido: `setup_board.sh` exige `device.key`, enviada só depois dele.
 
-## 0. Como eu (Claude) acesso a placa
+## 0. Formas de acesso à placa
 
-O ambiente onde escrevi o código não consegue abrir SSH para a sua rede. As opções,
-da melhor para a pior:
+Da melhor para a pior:
 
-1. **Terminal web da placa pelo navegador do app.** Com a placa no USB, a
-   imagem oficial expõe um IDE em `http://192.168.7.2:3000` (Cloud9 nas imagens
-   antigas, VS Code nas Debian 10+). Com o app desktop aberto e esta conversa
-   ligada ao seu computador, eu opero o terminal desse IDE pelo navegador
-   embutido. Você só precisa estar logado nele.
-2. **Pasta compartilhada.** Você conecta uma pasta pelo "+" do app; eu escrevo
-   arquivos lá e você roda os comandos, colando a saída aqui.
-3. **Manual.** Eu mando os comandos, você cola a saída.
+1. **SSH pela rede USB.** Com a placa no USB, ela responde em `192.168.7.2`.
+2. **Terminal web da placa.** A imagem oficial expõe um IDE em
+   `http://192.168.7.2:3000` (Cloud9 nas imagens antigas, VS Code nas Debian 10+).
+3. **Console serial.** Cabo FTDI de 3,3 V no conector J1, a 115200 baud.
 
 ## 1. Conexão e cópia do código (15 min)
 
@@ -37,7 +32,7 @@ scp -r atebeagle kernel scripts systemd workload config debian@192.168.7.2:~/ate
 ```bash
 cd ~/atebeagle && sudo bash scripts/check_board.sh | tee board_report.txt
 ```
-Cole o relatório no chat. Leitura rápida:
+Leitura rápida do relatório:
 
 | Resultado | Caminho |
 |---|---|

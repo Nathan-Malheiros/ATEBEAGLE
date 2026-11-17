@@ -1,7 +1,7 @@
 #!/bin/bash
 # ATEBEAGLE - Portão de decisão: o que a BeagleBone oferece?
 # Uso: sudo bash scripts/check_board.sh | tee board_report.txt
-# Cole o board_report.txt de volta no chat: ele decide o caminho de L2 e L3.
+# O board_report.txt decide o caminho de L2 e L3.
 
 ok()   { printf "  [OK]   %s\n" "$*"; }
 no()   { printf "  [FALTA] %s\n" "$*"; }
@@ -70,4 +70,4 @@ sec "LEDs e rede"
 ls -d /sys/class/leds/*usr* 2>/dev/null | sed 's/^/  [i]    /'
 ip -4 -o addr | awk '{print "  [i]    " $2 " " $4}'
 echo
-echo "Fim. Cole este relatório no chat."
+echo "Fim."
